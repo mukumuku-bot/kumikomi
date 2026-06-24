@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>06-24-8 (System Eyes)</title>
+    <title>06-24-23 (System Eyes)</title>
     <style>
         :root {
             --bg: #080c14;
@@ -23,17 +23,17 @@
             align-items: center;
         }
 
-        /* --- 目を表示する上部エリア --- */
+        /* --- 目を表示する上部エリア (大きく表示) --- */
         #eye-header {
             width: 100%;
-            height: 300px;
+            height: 350px;
             display: flex;
             justify-content: center;
             align-items: center;
             background: radial-gradient(circle, #111827 0%, #080c14 70%);
             border-bottom: 2px solid var(--border);
         }
-        #eye-canvas { width: 400px; height: 150px; }
+        #eye-canvas { width: 500px; height: 200px; }
 
         /* --- 下部ダッシュボードエリア --- */
         .content-wrapper { padding: 40px 20px; width: 100%; max-width: 640px; }
@@ -64,11 +64,11 @@
 <body>
 
     <div id="eye-header">
-        <canvas id="eye-canvas" width="400" height="150"></canvas>
+        <canvas id="eye-canvas" width="500" height="200"></canvas>
     </div>
 
     <div class="content-wrapper">
-        <h1>06-24-8</h1>
+        <h1>06-24-23</h1>
         <button id="btn" disabled>INITIALIZING...</button>
         
         <div class="card">
@@ -88,15 +88,15 @@
         const eyeCtx = eyeCanvas.getContext('2d');
         
         let model = null;
-        let eyeOffset = 0; // 目の動き用変数
+        let eyeOffset = 0; 
 
         // 目を描画する処理
         function drawEyes(lookOffset) {
             eyeCtx.clearRect(0, 0, eyeCanvas.width, eyeCanvas.height);
             const centerX = eyeCanvas.width / 2;
             const centerY = eyeCanvas.height / 2;
-            const gap = 80; // 目の間隔
-            const radius = 30; // 目の大きさ
+            const gap = 110;  // 目の間隔を調整
+            const radius = 50; // 目の大きさを大幅に拡大
 
             // 白目
             eyeCtx.fillStyle = "#fff";
@@ -105,16 +105,15 @@
             eyeCtx.arc(centerX + gap, centerY, radius, 0, Math.PI * 2);
             eyeCtx.fill();
 
-            // 黒目（動きの計算）
+            // 黒目（動きの方向を反転：- を追加）
             eyeCtx.fillStyle = "#000";
-            const pupilX = (lookOffset * 0.15); // オフセットに応じて動かす
+            const pupilX = -(lookOffset * 0.2); 
             eyeCtx.beginPath();
-            eyeCtx.arc(centerX - gap + pupilX, centerY, 10, 0, Math.PI * 2);
-            eyeCtx.arc(centerX + gap + pupilX, centerY, 10, 0, Math.PI * 2);
+            eyeCtx.arc(centerX - gap + pupilX, centerY, 18, 0, Math.PI * 2);
+            eyeCtx.arc(centerX + gap + pupilX, centerY, 18, 0, Math.PI * 2);
             eyeCtx.fill();
         }
 
-        // 初期描画
         drawEyes(0);
 
         (async function loadAI() {
@@ -138,7 +137,6 @@
                         const person = preds.find(p => p.class === 'person');
                         if (person) {
                             const [x, y, w] = person.bbox;
-                            // 画面中央に対する相対位置を計算(-100〜100)
                             const center = (x + w / 2) - (video.videoWidth / 2);
                             eyeOffset = (center / (video.videoWidth / 2)) * 100;
                             personRes.innerText = "TARGET DETECTED";

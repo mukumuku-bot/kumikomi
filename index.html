@@ -3,30 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>超高感度チェッカー ＆ AI人検知</title>
+    <title>超高感度チェッカー ＆ 位置ズレAI検知</title>
     <style>
         body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding-top: 20px; margin: 0; }
         #btn { padding: 20px 40px; font-size: 20px; cursor: pointer; background: #00ffcc; border: none; border-radius: 5px; font-weight: bold; margin-top: 10px; }
         #btn:disabled { background: #555; color: #aaa; cursor: not-allowed; }
         #status { color: #ffcc00; font-size: 16px; margin-bottom: 10px; }
-        #result-container { display: flex; justify-content: center; gap: 20px; font-size: 24px; font-weight: bold; margin-top: 20px; min-height: 40px; }
-        .res-box { padding: 10px 20px; border-radius: 5px; background: #333; min-width: 150px; transition: all 0.2s; }
+        #result-container { display: flex; justify-content: center; gap: 20px; font-size: 22px; font-weight: bold; margin-top: 20px; min-height: 40px; }
+        .res-box { padding: 10px 20px; border-radius: 5px; background: #333; min-width: 180px; transition: all 0.2s; }
         #audio-res { color: #00ffcc; }
         #person-res { color: #aaa; }
         #display-area { display: flex; justify-content: center; align-items: flex-end; gap: 40px; margin-top: 20px; }
         .meter-container { display: flex; flex-direction: column; align-items: center; }
-        .meter { width: 60px; background: #444; height: 250px; position: relative; display: flex; align-items: flex-end; border-radius: 5px; overflow: hidden; margin-top: 10px; }
+        .meter { width: 60px; background: #444; height: 240px; position: relative; display: flex; align-items: flex-end; border-radius: 5px; overflow: hidden; margin-top: 10px; }
         .fill { width: 100%; background: linear-gradient(to top, #00ffcc, #ff007f); height: 0%; transition: height 0.05s; }
         .video-container { display: flex; flex-direction: column; align-items: center; }
-        #webcam { height: 250px; aspect-ratio: 4 / 3; object-fit: cover; background: #000; border-radius: 5px; margin-top: 10px; }
+        /* AIが迷わないよう、HTMLとCSSでサイズを確実に固定 */
+        #webcam { width: 320px; height: 240px; object-fit: cover; background: #000; border-radius: 5px; margin-top: 10px; }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
 </head>
 <body>
 
-    <h1>超高感度チェッカー ＆ AI人検知</h1>
-    <div id="status">AIモデルを読み込んでいます。しばらくお待ちください...</div>
+    <h1>超高感度 ＆ 位置ズレAI検知</h1>
+    <div id="status">AI起動の準備中...（数秒かかります）</div>
     <button id="btn" disabled>起動する</button>
 
     <div id="result-container">
@@ -42,7 +43,7 @@
         
         <div class="video-container">
             <div>インカメ映像</div>
-            <video id="webcam" autoplay playsinline muted></video>
+            <video id="webcam" autoplay playsinline muted width="320" height="240"></video>
         </div>
     </div>
 
@@ -56,29 +57,31 @@
 
         let model = null;
 
-        // ページを開いたら自動でAIモデルのロードを開始
+        // AIモデルのロード
         cocoSsd.load().then(loadedModel => {
             model = loadedModel;
-            statusDiv.innerText = "AIの準備完了！ボタンを押せます。";
+            statusDiv.innerText = "AI準備完了！ボタンを押せます。";
             statusDiv.style.color = "#00ffcc";
-            btn.disabled = false; // ボタンを有効化
+            btn.disabled = false;
         }).catch(err => {
-            statusDiv.innerText = "AIの読み込みに失敗しました。ネット環境を確認してください。";
+            statusDiv.innerText = "AIの読み込みに失敗しました: " + err;
             statusDiv.style.color = "#ff007f";
         });
 
         btn.addEventListener('click', async () => {
             try {
-                // マイクとインカメを要求
+                // マイクとインカメ（サイズを指定して確実性をアップ）
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         channelCount: 1,
                         echoCancellation: false,
                         noiseSuppression: false,
-                        autoGainControl: true // 【遠くの音用】ブラウザの自動感度UPをONにする
+                        autoGainControl: true
                     },
                     video: {
-                        facingMode: "user" 
+                        facingMode: "user",
+                        width: 320,
+                        height: 240
                     }
                 });
 
@@ -105,13 +108,11 @@
                         if (absL > maxL) maxL = absL;
                     }
 
-                    // 【遠くの音用】計算された音量を「10倍」にブーストする（上限100%）
                     const boost = 10; 
                     const volL = Math.min(((maxL / 127) * 100) * boost, 100);
 
                     leftFill.style.height = `${volL}%`;
 
-                    // 反応するしきい値を「2%」まで下げて微弱な音を拾う
                     if (volL > 2) {
                         audioRes.innerText = "🎵 音声を検知！";
                     } else {
@@ -121,17 +122,42 @@
                     requestAnimationFrame(checkVolume);
                 }
 
-                // --- ②AIによるリアルタイム人検知 ---
+                // --- ②AIによるリアルタイム人検知 ＆ ズレ計算 ---
                 function detectPerson() {
                     if (video.readyState === video.HAVE_CURRENT_DATA) {
                         model.detect(video).then(predictions => {
-                            // AIが検出した中に "person"（人間）がいるかチェック
-                            const hasPerson = predictions.some(p => p.class === 'person');
+                            // 検出された中から「人(person)」だけを探す
+                            const person = predictions.find(p => p.class === 'person');
                             
-                            if (hasPerson) {
-                                personRes.innerText = "👤 人を検知！";
-                                personRes.style.color = "#ff007f";
-                                personRes.style.backgroundColor = "rgba(255, 0, 127, 0.2)";
+                            if (person) {
+                                // 検出した人の位置 [左端のX座標, 上端のY座標, 横幅, 縦幅]
+                                const [x, y, width, height] = person.bbox;
+                                
+                                // 人の中心のX座標を計算
+                                const personCenterX = x + (width / 2);
+                                // 画面の中心のX座標 (320px の半分で 160)
+                                const videoCenterX = 160; 
+                                
+                                // 中心からのズレを計算 (-160 〜 +160 の範囲になる)
+                                const diffX = personCenterX - videoCenterX;
+                                
+                                // ズレをパーセンテージに変換（真ん中が0%、一番右が+100%、一番左が-100%）
+                                const offsetPercent = Math.round((diffX / videoCenterX) * 100);
+
+                                // 画面への表示処理（小さなズレは正面とみなす）
+                                if (Math.abs(offsetPercent) <= 10) {
+                                    personRes.innerText = "👤 正面（ズレ0%）";
+                                    personRes.style.color = "#00ffcc";
+                                    personRes.style.backgroundColor = "rgba(0, 255, 204, 0.2)";
+                                } else if (offsetPercent > 10) {
+                                    personRes.innerText = `👉 右にズレ (${offsetPercent}%)`;
+                                    personRes.style.color = "#ffaa00";
+                                    personRes.style.backgroundColor = "rgba(255, 170, 0, 0.2)";
+                                } else {
+                                    personRes.innerText = `👈 左にズレ (${Math.abs(offsetPercent)}%)`;
+                                    personRes.style.color = "#ffaa00";
+                                    personRes.style.backgroundColor = "rgba(255, 170, 0, 0.2)";
+                                }
                             } else {
                                 personRes.innerText = "✖ 誰もいない";
                                 personRes.style.color = "#aaa";
@@ -139,15 +165,15 @@
                             }
                         });
                     }
-                    // 処理が重くなりすぎないよう、約0.1秒ごとにループ
-                    setTimeout(detectPerson, 100);
+                    // スマホが熱くならないよう、約0.15秒ごとに計算
+                    setTimeout(detectPerson, 150);
                 }
 
                 checkVolume();
                 detectPerson();
 
             } catch (err) {
-                alert('マイクまたはカメラの起動に失敗しました: ' + err);
+                alert('起動に失敗しました。マイクとカメラの両方の権限を許可してください: ' + err);
             }
         });
     </script>

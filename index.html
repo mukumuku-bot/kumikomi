@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>06-24-1</title>
+    <title>06-24-2</title>
     <style>
         body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding-top: 20px; margin: 0; }
         #btn { padding: 20px 40px; font-size: 20px; cursor: pointer; background: #00ffcc; border: none; border-radius: 5px; font-weight: bold; margin-top: 10px; }
         #btn:disabled { background: #555; color: #aaa; cursor: not-allowed; }
-        #status { color: #ffcc00; font-size: 16px; margin-bottom: 10px; }
+        #status { color: #ffcc00; font-size: 16px; margin-bottom: 10px; padding: 0 10px; word-break: break-all; }
         
-        /* 結果表示エリア */
         #result-container { display: flex; justify-content: center; gap: 20px; font-size: 22px; font-weight: bold; margin-top: 20px; min-height: 40px; }
         .res-box { padding: 10px 20px; border-radius: 5px; background: #333; min-width: 200px; transition: all 0.2s; }
         #audio-res { color: #00ffcc; }
@@ -18,24 +17,22 @@
         
         #display-area { display: flex; justify-content: center; align-items: flex-end; gap: 40px; margin-top: 20px; }
         
-        /* 音量メーター */
         .meter-container { display: flex; flex-direction: column; align-items: center; }
         .meter { width: 60px; background: #444; height: 240px; position: relative; display: flex; align-items: flex-end; border-radius: 5px; overflow: hidden; margin-top: 10px; }
         .fill { width: 100%; background: linear-gradient(to top, #00ffcc, #ff007f); height: 0%; transition: height 0.05s; }
         
-        /* カメラ ＆ マーク重ね合わせエリア */
         .video-container { display: flex; flex-direction: column; align-items: center; }
         .camera-wrapper { position: relative; width: 320px; height: 240px; margin-top: 10px; background: #000; border-radius: 5px; overflow: hidden; }
         #webcam { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
         #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none; }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 </head>
 <body>
 
-    <h1>06-24-1</h1>
-    <div id="status">AI起動の準備中...（数秒かかります）</div>
+    <h1>06-24-2</h1>
+    <div id="status">システム初期化中...</div>
     <button id="btn" disabled>起動する</button>
 
     <div id="result-container">
@@ -70,15 +67,31 @@
 
         let model = null;
 
-        // AIモデルの事前ロード
-        cocoSsd.load().then(loadedModel => {
-            model = loadedModel;
-            statusDiv.innerText = "AI準備完了！ボタンを押せます。";
-            statusDiv.style.color = "#00ffcc";
-            btn.disabled = false;
-        }).catch(err => {
-            statusDiv.innerText = "AIの読み込みに失敗しました: " + err;
-            statusDiv.style.color = "#ff007f";
+        // どこで止まったか追跡するための関数
+        function updateStatus(text, isError = false) {
+            statusDiv.innerText = text;
+            statusDiv.style.color = isError ? "#ff007f" : "#ffcc00";
+            console.log(text);
+        }
+
+        // ライブラリ自体の読み込みチェック
+        window.addEventListener('load', () => {
+            if (typeof tf === 'undefined' || typeof cocoSsd === 'undefined') {
+                updateStatus("エラー: AIライブラリのダウンロードに失敗しました。ネット接続を確認してください。", true);
+                return;
+            }
+
+            updateStatus("AIモデルをダウンロード中（軽量版）...");
+
+            // 【対策】スマホ向けに超軽量モデル 'lite_mobilenet_v2' を指定してロードを爆速化
+            cocoSsd.load({ base: 'lite_mobilenet_v2' }).then(loadedModel => {
+                model = loadedModel;
+                statusDiv.innerText = "AI準備完了！ボタンを押せます。";
+                statusDiv.style.color = "#00ffcc";
+                btn.disabled = false;
+            }).catch(err => {
+                updateStatus("AIモデルの展開エラー: " + err.message, true);
+            });
         });
 
         btn.addEventListener('click', async () => {
@@ -88,7 +101,7 @@
                         channelCount: 1,
                         echoCancellation: false,
                         noiseSuppression: false,
-                        autoGainControl: true // スマホのハードウェア自動感度UP
+                        autoGainControl: true
                     },
                     video: {
                         facingMode: "user",
@@ -102,7 +115,6 @@
                 
                 video.srcObject = stream;
 
-                // カメラの実際の解像度に合わせてキャンバスの内部サイズを完全一致させる（これでマークがズレなくなる）
                 video.onloadedmetadata = () => {
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
@@ -126,14 +138,10 @@
                         if (absL > maxL) maxL = absL;
                     }
 
-                    // 【極限設定】前回の倍率をさらに倍、通常の『200倍』に数値をブースト
                     const boost = 200; 
                     const volL = Math.min(((maxL / 127) * 100) * boost, 100);
 
-                    // メーターの表示更新
                     leftFill.style.height = `${volL}%`;
-                    
-                    // 音量を小数点以下2桁までリアルタイム数値表示
                     audioRes.innerText = `🎵 音量: ${volL.toFixed(2)}%`;
 
                     requestAnimationFrame(checkVolume);
@@ -143,26 +151,62 @@
                 function detectPerson() {
                     if (video.videoWidth > 0 && model) {
                         model.detect(video).then(predictions => {
-                            // 前回の描画マークをいったん全部消去
                             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                            // 「人 (person)」を探す
                             const person = predictions.find(p => p.class === 'person');
                             
                             if (person) {
                                 const [x, y, width, height] = person.bbox;
                                 
-                                // 【機能追加】人の周りにピンポイントで枠（マーク）を描画
-                                ctx.strokeStyle = "#ff007f"; // 鮮やかなピンクマゼンタ
-                                ctx.lineWidth = 6;            // スマホでも見やすい極太線
+                                // 人の周りにマークを描画
+                                ctx.strokeStyle = "#ff007f"; 
+                                ctx.lineWidth = 6;            
                                 ctx.strokeRect(x, y, width, height);
 
-                                // 中心の照準ドットも描画
+                                // 中心の照準ドット
                                 ctx.fillStyle = "#ff007f";
                                 ctx.beginPath();
                                 ctx.arc(x + (width / 2), y + (height / 2), 8, 0, 2 * Math.PI);
                                 ctx.fill();
                                 
-                                // 横方向のズレパーセンテージ計算
+                                // ズレパーセンテージ
                                 const personCenterX = x + (width / 2);
-                                const videoCenterX =
+                                const videoCenterX = canvas.width / 2;
+                                const diffX = personCenterX - videoCenterX;
+                                const offsetPercent = Math.round((diffX / videoCenterX) * 100);
+
+                                if (Math.abs(offsetPercent) <= 10) {
+                                    personRes.innerText = `👤 正面 (0%)`;
+                                    personRes.style.color = "#00ffcc";
+                                    personRes.style.backgroundColor = "rgba(0, 255, 204, 0.2)";
+                                } else if (offsetPercent > 10) {
+                                    personRes.innerText = `👉 右にズレ (${offsetPercent}%)`;
+                                    personRes.style.color = "#ffaa00";
+                                    personRes.style.backgroundColor = "rgba(255, 170, 0, 0.2)";
+                                } else {
+                                    personRes.innerText = `👈 左にズレ (${Math.abs(offsetPercent)}%)`;
+                                    personRes.style.color = "#ffaa00";
+                                    personRes.style.backgroundColor = "rgba(255, 170, 0, 0.2)";
+                                }
+                            } else {
+                                personRes.innerText = "✖ 誰もいない";
+                                personRes.style.color = "#aaa";
+                                personRes.style.backgroundColor = "#333";
+                            }
+                        }).catch(e => {
+                            console.error("AI判定エラー:", e);
+                        });
+                    }
+                    setTimeout(detectPerson, 100);
+                }
+
+                checkVolume();
+                detectPerson();
+
+            } catch (err) {
+                alert('起動に失敗しました: ' + err.message);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -3,28 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>音源方向チェッカー</title>
+    <title>音源方向チェッカー v2</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding-top: 50px; }
-        #btn { padding: 20px 40px; font-size: 20px; cursor: pointer; }
-        #result { font-size: 48px; font-weight: bold; margin-top: 50px; color: #00ffcc; }
+        body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding-top: 30px; }
+        #btn { padding: 20px 40px; font-size: 20px; cursor: pointer; background: #00ffcc; border: none; border-radius: 5px; font-weight: bold; }
+        #result { font-size: 40px; font-weight: bold; margin-top: 40px; color: #00ffcc; min-height: 60px; }
         #meters { display: flex; justify-content: center; gap: 40px; margin-top: 30px; }
-        .meter { width: 50px; background: #444; height: 200px; position: relative; display: flex; align-items: flex-end; }
-        .fill { width: 100%; background: #00ffcc; height: 0%; transition: height 0.1s; }
+        .meter { width: 60px; background: #444; height: 250px; position: relative; display: flex; align-items: flex-end; border-radius: 5px; overflow: hidden; }
+        .fill { width: 100%; background: linear-gradient(to top, #00ffcc, #ff007f); height: 0%; transition: height 0.05s; }
     </style>
 </head>
 <body>
 
-    <h1>音源方向チェッカー</h1>
-    <p>スマホを【横向き】にして置いてください</p>
+    <h1>音源方向チェッカー v2</h1>
+    <p>スマホを【横向き】にして机に置いてください</p>
     <button id="btn">マイクを起動</button>
 
     <div id="meters">
-        <div>左マイク<div class="meter"><div id="left-fill" class="fill"></div></div></div>
-        <div>右マイク<div class="meter"><div id="right-fill" class="fill"></div></div></div>
+        <div>CH1 (左側)<div class="meter"><div id="left-fill" class="fill"></div></div></div>
+        <div>CH2 (右側)<div class="meter"><div id="right-fill" class="fill"></div></div></div>
     </div>
 
-    <div id="result">--</div>
+    <div id="result">-- 停止中 --</div>
 
     <script>
         const btn = document.getElementById('btn');
@@ -34,7 +34,7 @@
 
         btn.addEventListener('click', async () => {
             try {
-                // ステレオでマイクを取得（ノイズサプレッション等は位相や音量を歪めるのでOFF）
+                // スマホに「生データ（ステレオ）をくれ」と強制する設定
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         channelCount: 2,
@@ -48,38 +48,47 @@
                 
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 const source = audioCtx.createMediaStreamSource(stream);
-                
-                // 左右のチャンネルを分離するスプリッター
                 const splitter = audioCtx.createChannelSplitter(2);
                 source.connect(splitter);
 
-                // 左チャンネル用の解析器
                 const analyserL = audioCtx.createAnalyser();
-                splitter.connect(analyserL, 0);
-
-                // 右チャンネル用の解析器
                 const analyserR = audioCtx.createAnalyser();
+                analyserL.fftSize = 256;
+                analyserR.fftSize = 256;
+                
+                splitter.connect(analyserL, 0);
                 splitter.connect(analyserR, 1);
 
-                const dataL = new Uint8Array(analyserL.frequencyBinCount);
-                const dataR = new Uint8Array(analyserR.frequencyBinCount);
+                // 波形データを直接取得するための配列
+                const dataL = new Uint8Array(analyserL.fftSize);
+                const dataR = new Uint8Array(analyserR.fftSize);
 
                 function checkDirection() {
-                    analyserL.getByteFrequencyData(dataL);
-                    analyserR.getByteFrequencyData(dataR);
+                    analyserL.getByteTimeDomainData(dataL);
+                    analyserR.getByteTimeDomainData(dataR);
 
-                    // 左右それぞれの平均音量を計算
-                    const volL = dataL.reduce((a, b) => a + b, 0) / dataL.length;
-                    const volR = dataR.reduce((a, b) => a + b, 0) / dataR.length;
+                    // 無音状態（128）からの「最大の振れ幅」を計算（これで感度が爆上がりします）
+                    let maxL = 0;
+                    let maxR = 0;
+                    for (let i = 0; i < dataL.length; i++) {
+                        const absL = Math.abs(dataL[i] - 128);
+                        const absR = Math.abs(dataR[i] - 128);
+                        if (absL > maxL) maxL = absL;
+                        if (absR > maxR) maxR = absR;
+                    }
 
-                    // 視覚化用のメーター更新
-                    leftFill.style.height = `${(volL / 255) * 100}%`;
-                    rightFill.style.height = `${(volR / 255) * 100}%`;
+                    // 0〜127の値を100%に変換
+                    const volL = (maxL / 127) * 100;
+                    const volR = (maxR / 127) * 100;
 
-                    // 一定以上の音量がある場合のみ判定（雑音対策）
+                    // メーターの表示更新
+                    leftFill.style.height = `${volL}%`;
+                    rightFill.style.height = `${volR}%`;
+
+                    // 判定（環境音を無視するため、5%以上の音量がある時だけ動かす）
                     if (volL > 5 || volR > 5) {
                         const diff = volL - volR;
-                        const threshold = 1.5; // 判定の閾値（適宜調整してください）
+                        const threshold = 8; // 判定の厳しさはここで調整
 
                         if (diff > threshold) {
                             resultDiv.innerText = "⬅️ 左から検知！";
@@ -98,7 +107,7 @@
                 checkDirection();
 
             } catch (err) {
-                alert('マイクの起動に失敗しました。ステレオマイク非対応の可能性があります: ' + err);
+                alert('エラーが発生しました: ' + err);
             }
         });
     </script>

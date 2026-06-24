@@ -6,14 +6,13 @@
     <title>06-24-23 (System Eyes)</title>
     <style>
         :root {
-            --bg: #080c14;
-            --card: #0f1626;
-            --border: #1e293b;
-            --cyan: #00d2ff;
-            --text: #e2e8f0;
+            --bg: #1a1d24;
+            --card: #252a34;
+            --accent: #89b4fa; /* 優しい青 */
+            --text: #cdd6f4;
         }
         body {
-            font-family: 'Consolas', 'Courier New', monospace, sans-serif;
+            font-family: 'Segoe UI', sans-serif;
             background: var(--bg);
             color: var(--text);
             margin: 0;
@@ -23,40 +22,33 @@
             align-items: center;
         }
 
-        /* --- 目を表示する上部エリア (大きく表示) --- */
         #eye-header {
             width: 100%;
             height: 350px;
             display: flex;
             justify-content: center;
             align-items: center;
-            background: radial-gradient(circle, #111827 0%, #080c14 70%);
-            border-bottom: 2px solid var(--border);
+            background: linear-gradient(180deg, #1e222a 0%, #1a1d24 100%);
         }
-        #eye-canvas { width: 500px; height: 200px; }
-
-        /* --- 下部ダッシュボードエリア --- */
-        .content-wrapper { padding: 40px 20px; width: 100%; max-width: 640px; }
         
-        h1 { font-size: 1.5rem; letter-spacing: 4px; margin: 0 0 20px 0; color: var(--cyan); }
+        /* 目のキャンバスを少し大きく、丸みを強調 */
+        #eye-canvas { width: 500px; height: 250px; }
+
+        .content-wrapper { padding: 30px 20px; width: 100%; max-width: 500px; }
+        
+        h1 { font-size: 1.2rem; letter-spacing: 2px; margin-bottom: 20px; color: var(--accent); opacity: 0.8; }
         
         #btn {
-            padding: 14px 45px; font-size: 16px; font-weight: bold; cursor: pointer;
-            color: var(--bg); background: var(--cyan); border: 1px solid var(--cyan);
-            border-radius: 4px; box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);
-            margin-bottom: 20px;
+            width: 100%; padding: 15px; font-size: 16px; cursor: pointer;
+            color: white; background: var(--accent); border: none;
+            border-radius: 12px; font-weight: bold;
         }
-        #btn:disabled { background: #111724; border-color: #475569; color: #475569; }
 
-        .card {
-            background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-            padding: 20px; width: 100%; box-sizing: border-box; margin-top: 20px;
+        .camera-wrapper { 
+            position: relative; width: 100%; height: 200px; 
+            background: #000; border-radius: 15px; overflow: hidden; margin-top: 20px;
         }
-        .card-title { font-size: 12px; font-weight: bold; margin-bottom: 15px; color: var(--cyan); }
-
-        .camera-wrapper { position: relative; width: 100%; max-width: 320px; height: 240px; background: #000; border: 1px solid var(--border); margin: 0 auto; }
         #webcam { width: 100%; height: 100%; object-fit: cover; }
-        #person-res { margin-top: 20px; font-size: 16px; padding: 15px; background: #060912; border: 1px solid var(--border); }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
@@ -64,90 +56,113 @@
 <body>
 
     <div id="eye-header">
-        <canvas id="eye-canvas" width="500" height="200"></canvas>
+        <canvas id="eye-canvas" width="500" height="250"></canvas>
     </div>
 
     <div class="content-wrapper">
         <h1>06-24-23</h1>
-        <button id="btn" disabled>INITIALIZING...</button>
-        
-        <div class="card">
-            <div class="card-title">[ CAMERA FEED ]</div>
-            <div class="camera-wrapper">
-                <video id="webcam" autoplay playsinline muted></video>
-            </div>
-            <div id="person-res">SYSTEM STANDBY</div>
+        <button id="btn">ACTIVATE SYSTEM</button>
+        <div class="camera-wrapper">
+            <video id="webcam" autoplay playsinline muted></video>
         </div>
     </div>
 
     <script>
         const btn = document.getElementById('btn');
-        const personRes = document.getElementById('person-res');
         const video = document.getElementById('webcam');
         const eyeCanvas = document.getElementById('eye-canvas');
-        const eyeCtx = eyeCanvas.getContext('2d');
+        const ctx = eyeCanvas.getContext('2d');
         
         let model = null;
-        let eyeOffset = 0; 
+        
+        // アニメーション用変数
+        let eyeX = 0, eyeY = 0; // 現在の瞳の位置
+        let targetX = 0, targetY = 0; // 目標の瞳の位置
+        let isBlinking = false;
+        let blinkTimer = 0;
 
-        // 目を描画する処理
-        function drawEyes(lookOffset) {
-            eyeCtx.clearRect(0, 0, eyeCanvas.width, eyeCanvas.height);
-            const centerX = eyeCanvas.width / 2;
-            const centerY = eyeCanvas.height / 2;
-            const gap = 110;  // 目の間隔を調整
-            const radius = 50; // 目の大きさを大幅に拡大
+        // 初期化
+        (async function loadAI() {
+            model = await cocoSsd.load({ base: 'mobilenet_v2' });
+            btn.innerText = "SYSTEM ONLINE";
+        })();
 
-            // 白目
-            eyeCtx.fillStyle = "#fff";
-            eyeCtx.beginPath();
-            eyeCtx.arc(centerX - gap, centerY, radius, 0, Math.PI * 2);
-            eyeCtx.arc(centerX + gap, centerY, radius, 0, Math.PI * 2);
-            eyeCtx.fill();
+        // 描画ループ (60fps)
+        function animate() {
+            // 滑らかに追従 (Lerp処理)
+            eyeX += (targetX - eyeX) * 0.1;
+            eyeY += (targetY - eyeY) * 0.1;
 
-            // 黒目（動きの方向を反転：- を追加）
-            eyeCtx.fillStyle = "#000";
-            const pupilX = -(lookOffset * 0.2); 
-            eyeCtx.beginPath();
-            eyeCtx.arc(centerX - gap + pupilX, centerY, 18, 0, Math.PI * 2);
-            eyeCtx.arc(centerX + gap + pupilX, centerY, 18, 0, Math.PI * 2);
-            eyeCtx.fill();
+            drawEyes();
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        function drawEyes() {
+            ctx.clearRect(0, 0, eyeCanvas.width, eyeCanvas.height);
+            const cx = eyeCanvas.width / 2;
+            const cy = eyeCanvas.height / 2;
+            const gap = 110;
+            const radius = 60;
+
+            // 白目 (少し角丸っぽく見せるために少し楕円気味に)
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath();
+            ctx.ellipse(cx - gap, cy, radius, radius + 10, 0, 0, Math.PI * 2);
+            ctx.ellipse(cx + gap, cy, radius, radius + 10, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // まばたき処理
+            if (isBlinking) {
+                ctx.fillStyle = "#ffffff"; // まぶたを閉じる
+                ctx.beginPath();
+                ctx.fillRect(cx - gap - radius, cy - 10, radius * 2, 20);
+                ctx.fillRect(cx + gap - radius, cy - 10, radius * 2, 20);
+                return;
+            }
+
+            // 黒目
+            ctx.fillStyle = "#2d3436";
+            ctx.beginPath();
+            ctx.arc(cx - gap + eyeX, cy + eyeY, 25, 0, Math.PI * 2);
+            ctx.arc(cx + gap + eyeX, cy + eyeY, 25, 0, Math.PI * 2);
+            ctx.fill();
+
+            // ハイライト (うるうる感)
+            ctx.fillStyle = "rgba(255,255,255,0.4)";
+            ctx.beginPath();
+            ctx.arc(cx - gap + eyeX - 8, cy + eyeY - 8, 8, 0, Math.PI * 2);
+            ctx.arc(cx + gap + eyeX - 8, cy + eyeY - 8, 8, 0, Math.PI * 2);
+            ctx.fill();
         }
 
-        drawEyes(0);
-
-        (async function loadAI() {
-            try {
-                model = await cocoSsd.load({ base: 'mobilenet_v2' });
-                btn.innerText = "START SYSTEM";
-                btn.disabled = false;
-            } catch (err) {
-                btn.innerText = "LOAD FAILED";
+        // まばたきランダム発生
+        setInterval(() => {
+            if (Math.random() < 0.2) {
+                isBlinking = true;
+                setTimeout(() => isBlinking = false, 150);
             }
-        })();
+        }, 3000);
 
         btn.addEventListener('click', async () => {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
             video.srcObject = stream;
             btn.style.display = 'none';
 
+            // 追跡ループ
             function detect() {
-                if (model) {
-                    model.detect(video).then(preds => {
-                        const person = preds.find(p => p.class === 'person');
-                        if (person) {
-                            const [x, y, w] = person.bbox;
-                            const center = (x + w / 2) - (video.videoWidth / 2);
-                            eyeOffset = (center / (video.videoWidth / 2)) * 100;
-                            personRes.innerText = "TARGET DETECTED";
-                        } else {
-                            eyeOffset = 0;
-                            personRes.innerText = "NO TARGET";
-                        }
-                        drawEyes(eyeOffset);
-                    });
-                }
-                setTimeout(detect, 100);
+                model.detect(video).then(preds => {
+                    const person = preds.find(p => p.class === 'person');
+                    if (person) {
+                        const [x, y, w, h] = person.bbox;
+                        // 画面中央に対する相対位置 (-1.0 to 1.0)
+                        targetX = ((x + w/2) / video.videoWidth - 0.5) * 100;
+                        targetY = ((y + h/2) / video.videoHeight - 0.5) * 100;
+                    } else {
+                        targetX = 0; targetY = 0;
+                    }
+                    setTimeout(detect, 100);
+                });
             }
             detect();
         });

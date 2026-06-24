@@ -2,46 +2,35 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>06-24-20</title>
+    <title>06-24-20_FIX</title>
     <style>
-        :root {
-            --bg: #0c101b;
-            --card: #161b26;
-            --border: #242b3d;
-            --cyan: #00d2ff;
-        }
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg); overflow: hidden; }
-
-        /* キャンバス：z-indexを999にして「何よりも最前面」に強制固定 */
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #0c101b; overflow: hidden; }
+        
+        /* 目は最前面に固定 */
         #eye-canvas { 
-            position: absolute; top: 0; left: 0; z-index: 999; pointer-events: none;
+            position: absolute; top: 0; left: 0; z-index: 999; 
         }
 
-        #bottom-panel {
-            position: absolute; bottom: 0; left: 0; width: 100%; height: 160px;
-            background: var(--card); border-top: 2px solid var(--border);
-            z-index: 10; display: flex; align-items: center; justify-content: space-around;
-        }
-
-        .camera-wrapper { width: 160px; height: 120px; background: #000; border: 1px solid var(--border); overflow: hidden; }
-        #webcam { width: 160px; height: 120px; object-fit: cover; transform: scaleX(-1); }
-
+        /* 起動ボタンは手前に */
         #btn {
             position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
             padding: 16px 45px; z-index: 1000; cursor: pointer;
+        }
+
+        /* 文字情報は端へ */
+        #info {
+            position: absolute; top: 20px; left: 20px; z-index: 1000;
+            color: #00d2ff; font-family: monospace; font-size: 20px;
         }
     </style>
 </head>
 <body>
 
+    <div id="info">STATUS: STANDBY</div>
     <button id="btn">START TRACKING</button>
     <canvas id="eye-canvas"></canvas>
 
-    <div id="bottom-panel">
-        <div id="tracking-info" style="color:white; font-family:monospace;">STATUS: WAITING...</div>
-        <div class="camera-wrapper"><video id="webcam" autoplay playsinline muted></video></div>
-    </div>
+    <video id="webcam" style="display:none;" autoplay playsinline muted></video>
 
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7"></script>
@@ -50,26 +39,29 @@
         const canvas = document.getElementById('eye-canvas');
         const ctx = canvas.getContext('2d');
         const video = document.getElementById('webcam');
-        const info = document.getElementById('tracking-info');
+        const info = document.getElementById('info');
         
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
         let currentX = 0, targetX = 0;
-        let model = null;
 
         function drawLoop() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            currentX += (targetX - currentX) * 0.1;
+            
+            // ヌルヌル動くための補間処理を強化
+            currentX += (targetX - currentX) * 0.15;
             
             const centerX = canvas.width / 2;
-            const centerY = (canvas.height - 160) / 2;
+            const centerY = canvas.height / 2;
             const radius = 80;
 
-            // 目を描画（最前面で描画される）
+            // 目の描画
             [centerX - 100, centerX + 100].forEach(x => {
+                // 白目
                 ctx.fillStyle = "white";
                 ctx.beginPath(); ctx.arc(x, centerY, radius, 0, Math.PI*2); ctx.fill();
+                // 黒目（currentXで動く）
                 ctx.fillStyle = "#00d2ff";
                 ctx.beginPath(); ctx.arc(x + currentX, centerY, radius*0.5, 0, Math.PI*2); ctx.fill();
             });
@@ -78,18 +70,20 @@
         drawLoop();
 
         document.getElementById('btn').onclick = async () => {
-            model = await blazeface.load();
+            const model = await blazeface.load();
             const stream = await navigator.mediaDevices.getUserMedia({video: true});
             video.srcObject = stream;
             document.getElementById('btn').style.display = 'none';
+            info.innerText = "STATUS: TRACKING...";
 
             async function detect() {
                 const predictions = await model.estimateFaces(video, false);
                 if (predictions.length > 0) {
-                    const eyes = predictions[0].landmarks;
-                    const eyesX = (eyes[0][0] + eyes[1][0]) / 2;
-                    targetX = (eyesX - 80) * 0.5;
-                    info.innerText = `OFFSET: ${Math.round((eyesX/160 - 0.5)*200)}%`;
+                    const landmarks = predictions[0].landmarks;
+                    const eyesX = (landmarks[0][0] + landmarks[1][0]) / 2;
+                    // 目線のずれを計算
+                    targetX = (eyesX - 320) * 0.3; 
+                    info.innerText = `OFFSET: ${Math.round((eyesX/640 - 0.5)*200)}%`;
                 }
                 requestAnimationFrame(detect);
             }

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>06-24-13</title>
+    <title>06-24-15</title>
     <style>
         :root {
             --bg: #0c101b;
@@ -37,16 +37,16 @@
             background: #090d16; padding: 15px; border: 1px solid var(--border); border-radius: 4px;
             min-width: 140px; text-align: center;
         }
-        .title-sub { font-size: 9px; color: var(--cyan); letter-spacing: 1px; margin-top: 5px; opacity: 0.7; }
+        .title-sub { font-size: 9px; color: #00d2ff; letter-spacing: 1px; margin-top: 5px; opacity: 0.7; }
 
         /* 中央：人のトラッキング＆ずれ％表示 */
         #tracking-info {
-            font-size: 18px; font-weight: bold; color: var(--cyan); text-align: left;
+            font-size: 18px; font-weight: bold; color: #00d2ff; text-align: left;
             min-width: 260px; line-height: 1.5; letter-spacing: 1px;
             background: #090d16; padding: 15px; border: 1px solid var(--border); border-radius: 4px;
         }
 
-        /* 右側：カメラ表示（コンパクトサイズ） */
+        /* 右側：カメラ表示 */
         .camera-wrapper { position: relative; width: 160px; height: 120px; background: #000; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
         #webcam { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 
@@ -54,11 +54,11 @@
         #btn {
             position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
             padding: 16px 45px; font-size: 16px; font-weight: bold; cursor: pointer;
-            color: var(--bg); background: var(--cyan); border: none; border-radius: 4px;
+            color: #0c101b; background: #00d2ff; border: none; border-radius: 4px;
             box-shadow: 0 0 25px rgba(0, 210, 255, 0.4); z-index: 20; letter-spacing: 2px;
         }
         #btn:disabled { background: #1a2333; color: #475569; box-shadow: none; cursor: not-allowed; }
-        #status { position: absolute; top: calc(40% + 50px); left: 0; width: 100%; text-align: center; font-size: 13px; color: var(--cyan); z-index: 20; }
+        #status { position: absolute; top: calc(40% + 50px); left: 0; width: 100%; text-align: center; font-size: 13px; color: #00d2ff; z-index: 20; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7"></script>
@@ -66,14 +66,14 @@
 <body>
 
     <button id="btn" disabled>INITIALIZING...</button>
-    <div id="status">LOADING ANIME VISION ENGINE...</div>
+    <div id="status">LOADING EYE ENGINE...</div>
 
     <canvas id="eye-canvas"></canvas>
 
     <div id="bottom-panel">
         <div class="panel-section">
             <div class="title-box">
-                06-24-13
+                06-24-15
                 <div class="title-sub">VISION SYSTEM</div>
             </div>
         </div>
@@ -125,8 +125,8 @@
         (async function loadAI() {
             try {
                 model = await blazeface.load();
-                statusDiv.innerText = "EYE SYSTEM READY";
-                btn.innerText = "START ANIME EYES";
+                statusDiv.innerText = "SYSTEM READY";
+                btn.innerText = "START";
                 btn.disabled = false;
             } catch (err) {
                 statusDiv.innerText = "ENGINE ERROR";
@@ -135,16 +135,12 @@
 
         btn.addEventListener('click', async () => {
             try {
-                // 【超・安全策】条件オブジェクトを全撤廃。Safariがエラーを吐く余地をゼロに。
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: true
-                });
-
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 btn.style.display = 'none';
                 statusDiv.style.display = 'none';
                 video.srcObject = stream;
 
-                // トラッキング（解像度が自動決定されても追従が破綻しない動的計算）
+                // トラッキング
                 function detect() {
                     if (video.videoWidth > 0 && model) {
                         model.estimateFaces(video, false).then(predictions => {
@@ -153,17 +149,16 @@
                                 const landmarks = predictions[0].landmarks;
                                 const eyesCenterX = (landmarks[0][0] + landmarks[1][0]) / 2;
                                 
-                                // デバイスごとの実際のビデオ幅から中央値を割ってパーセント化
                                 const widthHalf = video.videoWidth / 2;
                                 personPercent = Math.round(-((eyesCenterX - widthHalf) / widthHalf) * 100);
                                 
                                 if (personPercent > 100) personPercent = 100;
                                 if (personPercent < -100) personPercent = -100;
 
-                                targetX = (personPercent / 100) * 35; 
+                                targetX = (personPercent / 100) * 40; 
 
                                 if (Math.abs(personPercent) <= 12) {
-                                    trackingInfo.innerHTML = `STATUS: <span style="color:var(--cyan);">LOCK_ON (CENTER)</span><br>OFFSET: 0%`;
+                                    trackingInfo.innerHTML = `STATUS: <span style="color:#00d2ff;">LOCK_ON (CENTER)</span><br>OFFSET: 0%`;
                                 } else {
                                     const dir = personPercent > 0 ? "RIGHT" : "LEFT";
                                     trackingInfo.innerHTML = `STATUS: <span style="color:#ffffff;">TRACKING_${dir}</span><br>OFFSET: ${personPercent > 0 ? '+' : ''}${personPercent}%`;
@@ -211,67 +206,58 @@
                     const centerX = canvas.width / 2;
                     const centerY = canvas.height / 2;
                     
-                    const eyeWidth = Math.min(canvas.width, canvas.height) * 0.22;
+                    const eyeWidth = Math.min(canvas.width, canvas.height) * 0.20;
                     const eyeHeight = eyeWidth * 1.2; 
                     const eyeSpacing = eyeWidth * 1.1; 
 
                     const leftEyeCenter = { x: centerX - eyeSpacing, y: centerY };
                     const rightEyeCenter = { x: centerX + eyeSpacing, y: centerY };
 
+                    // 安全で可愛い、シンプルなマスコットの目の描画
                     function drawAnimeEye(center) {
                         ctx.save();
                         ctx.translate(center.x, center.y);
                         ctx.scale(1.0, blinkScale);
 
-                        // 1. 白目
+                        // 1. 白目（ベース）
                         ctx.fillStyle = "#ffffff";
                         ctx.beginPath();
                         ctx.ellipse(0, 0, eyeWidth, eyeHeight, 0, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        // 2. アイライン
-                        ctx.strokeStyle = "#1b2030";
+                        // 目のふち（アイライン）
+                        ctx.strokeStyle = "#161b26";
                         ctx.lineWidth = 8;
                         ctx.stroke();
-                        ctx.clip();
+                        ctx.clip(); // 白目の外にはみ出さないようにマスク
 
-                        // 3. 巨大な黒目
+                        // 2. 黒目（綺麗な水色のシンプルな丸）
                         const irisX = currentX; 
                         const irisY = 5; 
-                        const irisRadius = eyeWidth * 0.75;
-
-                        const irisGrad = ctx.createRadialGradient(irisX, irisY, 5, irisX, irisY, irisRadius);
-                        irisGrad.addColorStop(0, "#003c66"); 
-                        irisGrad.addColorStop(0.6, "var(--cyan)"); 
-                        irisGrad.addColorStop(1, "#008bbb");
-                        
-                        ctx.fillStyle = irisGrad;
+                        ctx.fillStyle = "#00d2ff";
                         ctx.beginPath();
-                        ctx.arc(irisX, irisY, irisRadius, 0, Math.PI * 2);
+                        ctx.arc(irisX, irisY, eyeWidth * 0.75, 0, Math.PI * 2);
                         ctx.fill();
 
-                        // 4. 瞳孔
-                        ctx.fillStyle = "#060a12";
+                        // 3. 瞳孔（真ん中の黒目）
+                        ctx.fillStyle = "#090d16";
                         ctx.beginPath();
-                        ctx.arc(irisX, irisY + 5, irisRadius * 0.35, 0, Math.PI * 2);
+                        ctx.arc(irisX, irisY + 5, eyeWidth * 0.4, 0, Math.PI * 2);
                         ctx.fill();
 
-                        // 5. ハイライト
+                        // 4. ハイライト（これが入るだけで一気に愛着のわく「命」が宿ります！）
                         ctx.fillStyle = "#ffffff";
                         ctx.beginPath();
-                        ctx.arc(irisX - 15, irisY - 25, 14, 0, Math.PI * 2);
-                        ctx.fill();
-
-                        ctx.beginPath();
-                        ctx.arc(irisX + 20, irisY + 25, 6, 0, Math.PI * 2);
+                        ctx.arc(irisX - 12, irisY - 20, 12, 0, Math.PI * 2); // 右上の大きな光
                         ctx.fill();
 
                         ctx.restore();
                         
+                        // まばたき（完全に閉じている時）の可愛い横一本線
                         if (blinkScale <= 0.05) {
                             ctx.save();
                             ctx.translate(center.x, center.y);
-                            ctx.strokeStyle = "#1b2030";
+                            ctx.strokeStyle = "#161b26";
                             ctx.lineWidth = 10;
                             ctx.lineCap = "round";
                             ctx.beginPath();

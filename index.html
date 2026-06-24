@@ -3,28 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>音源チェッカー ＆ インカメ</title>
+    <title>超高感度チェッカー ＆ AI人検知</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding-top: 30px; margin: 0; }
-        #btn { padding: 20px 40px; font-size: 20px; cursor: pointer; background: #00ffcc; border: none; border-radius: 5px; font-weight: bold; }
-        #result { font-size: 40px; font-weight: bold; margin-top: 40px; color: #00ffcc; min-height: 60px; }
-        #display-area { display: flex; justify-content: center; align-items: flex-end; gap: 40px; margin-top: 30px; }
+        body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding-top: 20px; margin: 0; }
+        #btn { padding: 20px 40px; font-size: 20px; cursor: pointer; background: #00ffcc; border: none; border-radius: 5px; font-weight: bold; margin-top: 10px; }
+        #btn:disabled { background: #555; color: #aaa; cursor: not-allowed; }
+        #status { color: #ffcc00; font-size: 16px; margin-bottom: 10px; }
+        #result-container { display: flex; justify-content: center; gap: 20px; font-size: 24px; font-weight: bold; margin-top: 20px; min-height: 40px; }
+        .res-box { padding: 10px 20px; border-radius: 5px; background: #333; min-width: 150px; transition: all 0.2s; }
+        #audio-res { color: #00ffcc; }
+        #person-res { color: #aaa; }
+        #display-area { display: flex; justify-content: center; align-items: flex-end; gap: 40px; margin-top: 20px; }
         .meter-container { display: flex; flex-direction: column; align-items: center; }
         .meter { width: 60px; background: #444; height: 250px; position: relative; display: flex; align-items: flex-end; border-radius: 5px; overflow: hidden; margin-top: 10px; }
         .fill { width: 100%; background: linear-gradient(to top, #00ffcc, #ff007f); height: 0%; transition: height 0.05s; }
         .video-container { display: flex; flex-direction: column; align-items: center; }
         #webcam { height: 250px; aspect-ratio: 4 / 3; object-fit: cover; background: #000; border-radius: 5px; margin-top: 10px; }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 </head>
 <body>
 
-    <h1>音源チェッカー ＆ インカメ</h1>
-    <p>ボタンを押してマイクとインカメを起動してください</p>
-    <button id="btn">起動する</button>
+    <h1>超高感度チェッカー ＆ AI人検知</h1>
+    <div id="status">AIモデルを読み込んでいます。しばらくお待ちください...</div>
+    <button id="btn" disabled>起動する</button>
+
+    <div id="result-container">
+        <div id="audio-res" class="res-box">-- 音声 --</div>
+        <div id="person-res" class="res-box">-- 人検知 --</div>
+    </div>
 
     <div id="display-area">
         <div class="meter-container">
-            <div>CH1 (マイク)</div>
+            <div>CH1 (超高感度)</div>
             <div class="meter"><div id="left-fill" class="fill"></div></div>
         </div>
         
@@ -34,36 +46,48 @@
         </div>
     </div>
 
-    <div id="result">-- 停止中 --</div>
-
     <script>
         const btn = document.getElementById('btn');
-        const resultDiv = document.getElementById('result');
+        const statusDiv = document.getElementById('status');
+        const audioRes = document.getElementById('audio-res');
+        const personRes = document.getElementById('person-res');
         const leftFill = document.getElementById('left-fill');
         const video = document.getElementById('webcam');
 
+        let model = null;
+
+        // ページを開いたら自動でAIモデルのロードを開始
+        cocoSsd.load().then(loadedModel => {
+            model = loadedModel;
+            statusDiv.innerText = "AIの準備完了！ボタンを押せます。";
+            statusDiv.style.color = "#00ffcc";
+            btn.disabled = false; // ボタンを有効化
+        }).catch(err => {
+            statusDiv.innerText = "AIの読み込みに失敗しました。ネット環境を確認してください。";
+            statusDiv.style.color = "#ff007f";
+        });
+
         btn.addEventListener('click', async () => {
             try {
-                // マイクとインカメ（フロントカメラ）を同時に要求
+                // マイクとインカメを要求
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         channelCount: 1,
                         echoCancellation: false,
                         noiseSuppression: false,
-                        autoGainControl: false
+                        autoGainControl: true // 【遠くの音用】ブラウザの自動感度UPをONにする
                     },
                     video: {
-                        // ここを "user" にしてインカメを強制
                         facingMode: "user" 
                     }
                 });
 
                 btn.style.display = 'none';
+                statusDiv.style.display = 'none';
                 
-                // カメラ映像をvideoタグにセット
                 video.srcObject = stream;
                 
-                // 音声解析の設定
+                // --- ①マイク音量の超高感度解析 ---
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 const source = audioCtx.createMediaStreamSource(stream);
                 const analyserL = audioCtx.createAnalyser();
@@ -75,29 +99,52 @@
                 function checkVolume() {
                     analyserL.getByteTimeDomainData(dataL);
 
-                    // 最大振幅（感度）の計算
                     let maxL = 0;
                     for (let i = 0; i < dataL.length; i++) {
                         const absL = Math.abs(dataL[i] - 128);
                         if (absL > maxL) maxL = absL;
                     }
 
-                    const volL = (maxL / 127) * 100;
+                    // 【遠くの音用】計算された音量を「10倍」にブーストする（上限100%）
+                    const boost = 10; 
+                    const volL = Math.min(((maxL / 127) * 100) * boost, 100);
 
-                    // メーターの表示更新
                     leftFill.style.height = `${volL}%`;
 
-                    // 音の検知フラグ表示
-                    if (volL > 5) {
-                        resultDiv.innerText = "🎵 音声を検知！";
+                    // 反応するしきい値を「2%」まで下げて微弱な音を拾う
+                    if (volL > 2) {
+                        audioRes.innerText = "🎵 音声を検知！";
                     } else {
-                        resultDiv.innerText = "-- 静かです --";
+                        audioRes.innerText = "-- 静かです --";
                     }
 
                     requestAnimationFrame(checkVolume);
                 }
 
+                // --- ②AIによるリアルタイム人検知 ---
+                function detectPerson() {
+                    if (video.readyState === video.HAVE_CURRENT_DATA) {
+                        model.detect(video).then(predictions => {
+                            // AIが検出した中に "person"（人間）がいるかチェック
+                            const hasPerson = predictions.some(p => p.class === 'person');
+                            
+                            if (hasPerson) {
+                                personRes.innerText = "👤 人を検知！";
+                                personRes.style.color = "#ff007f";
+                                personRes.style.backgroundColor = "rgba(255, 0, 127, 0.2)";
+                            } else {
+                                personRes.innerText = "✖ 誰もいない";
+                                personRes.style.color = "#aaa";
+                                personRes.style.backgroundColor = "#333";
+                            }
+                        });
+                    }
+                    // 処理が重くなりすぎないよう、約0.1秒ごとにループ
+                    setTimeout(detectPerson, 100);
+                }
+
                 checkVolume();
+                detectPerson();
 
             } catch (err) {
                 alert('マイクまたはカメラの起動に失敗しました: ' + err);

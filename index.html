@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>06-24-7</title>
+    <title>06-24-8</title>
     <style>
         :root {
             --bg: #080c14;
@@ -31,7 +31,6 @@
         }
         #btn:disabled { background: #111724; border-color: #475569; color: #475569; box-shadow: none; }
 
-        /* 常に上下の縦並び（上に音声、下に人認識）を維持しつつ、横幅を最適化 */
         .dashboard { display: flex; flex-direction: column; align-items: center; gap: 20px; max-width: 640px; margin: 20px auto 0 auto; }
         .card {
             background: var(--card); border: 1px solid var(--border); border-radius: 8px;
@@ -49,10 +48,9 @@
         .meter-bar { width: 100%; max-width: 300px; background: #060912; height: 12px; border: 1px solid #161f30; }
         .fill { height: 100%; width: 0%; background: linear-gradient(90deg, #0066cc, var(--cyan)); box-shadow: 0 0 8px var(--cyan); }
 
-        /* VISION (カメラとステータス表示を横並びにするレイアウト) */
+        /* VISION (横並びレイアウト) */
         .vision-container { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: center; gap: 20px; }
         
-        /* ターゲット表示を巨大化＆インジケーター調に強化 */
         #person-res { 
             font-size: 20px; font-weight: bold; padding: 20px; background: #060912; 
             border: 1px solid var(--border); border-radius: 4px; min-width: 240px; box-sizing: border-box;
@@ -64,17 +62,18 @@
         #webcam { z-index: 1; }
         #overlay { z-index: 2; pointer-events: none; }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
 </head>
 <body>
 
-    <h1>06-24-7</h1>
+    <h1>06-24-8</h1>
     <div id="status">INITIALIZING SYSTEM...</div>
     <button id="btn" disabled>START SYSTEM</button>
 
     <div class="dashboard">
         <div class="card">
-            <div class="card-title">[ AUDIO ANALYZER ]</div>
+            <div class="card-title"> [ AUDIO ANALYZER ]</div>
             <div class="audio-container">
                 <div id="audio-res">0.00 %</div>
                 <div class="meter-bar"><div id="left-fill" class="fill"></div></div>
@@ -102,7 +101,14 @@
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('overlay');
         const ctx = canvas.getContext('2d');
+        
         let model = null;
+        
+        // 【修正②】ブラウザの自動破棄(GC)を防ぐため、オーディオ関連インスタンスを関数外で保持
+        let audioCtx = null;
+        let audioSource = null;
+        let analyser = null;
+        let dataArray = null;
 
         (async function loadAI() {
             try {
@@ -128,12 +134,17 @@
                 video.srcObject = stream;
                 video.onloadedmetadata = () => { canvas.width = video.videoWidth; canvas.height = video.videoHeight; };
                 
-                // ① AUDIO
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const analyser = audioCtx.createAnalyser();
+                // ① AUDIO (インスタンスをグローバル変数にがっちり固定して接続維持)
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                await audioCtx.resume(); // ブラウザのセキュリティ制限対策
+                
+                analyser = audioCtx.createAnalyser();
                 analyser.fftSize = 256;
-                audioCtx.createMediaStreamSource(stream).connect(analyser);
-                const dataArray = new Uint8Array(analyser.fftSize);
+                
+                audioSource = audioCtx.createMediaStreamSource(stream);
+                audioSource.connect(analyser);
+                
+                dataArray = new Uint8Array(analyser.fftSize);
 
                 function checkVolume() {
                     analyser.getByteTimeDomainData(dataArray);

@@ -185,4 +185,189 @@
 </head>
 <body>
 
-    <h1>06-24-
+    <h1>06-24-4</h1>
+    <div id="status">AIシステム初期化中...</div>
+    <button id="btn" disabled>システムを起動</button>
+
+    <div class="dashboard">
+        <div class="card">
+            <div class="card-title">Audio System</div>
+            <div class="audio-container">
+                <div id="audio-res">0.00 %</div>
+                <div class="meter-bar">
+                    <div id="left-fill" class="fill"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title vision">Vision System</div>
+            <div class="vision-container">
+                <div id="person-res">STANDBY</div>
+                <div class="camera-wrapper">
+                    <video id="webcam" autoplay playsinline muted></video>
+                    <canvas id="overlay"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const btn = document.getElementById('btn');
+        const statusDiv = document.getElementById('status');
+        const audioRes = document.getElementById('audio-res');
+        const personRes = document.getElementById('person-res');
+        const leftFill = document.getElementById('left-fill');
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('overlay');
+        const ctx = canvas.getContext('2d');
+
+        let model = null;
+
+        // 【改善案1】window.onloadを排除。スクリプトが読まれたら「即座」にロードを開始
+        async function loadAI() {
+            try {
+                if (typeof tf === 'undefined' || typeof cocoSsd === 'undefined') {
+                    throw new Error("ライブラリが読み込まれていません");
+                }
+                
+                statusDiv.innerText = "AIモデル（最速版）をダウンロード中...";
+                
+                // 【改善案2】最も配信が安定している標準のmobilenet_v2を使用
+                model = await cocoSsd.load({ base: 'mobilenet_v2' });
+                
+                statusDiv.innerText = "READY";
+                statusDiv.style.color = "#00f3ff";
+                btn.disabled = false;
+            } catch (err) {
+                // 【改善案3】万が一ネットワーク等の理由でエラーになっても、強制的にボタンを使えるようにする（マイクだけでも動かす保険）
+                statusDiv.innerText = "AI一時不調：ボタンを強制有効化しました (エラー: " + err.message + ")";
+                statusDiv.style.color = "#ff007f";
+                btn.disabled = false; 
+            }
+        }
+
+        // 即時実行
+        loadAI();
+
+        btn.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 1,
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: true
+                    },
+                    video: {
+                        facingMode: "user",
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    }
+                });
+
+                btn.style.display = 'none';
+                statusDiv.style.display = 'none';
+                
+                video.srcObject = stream;
+
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                };
+                
+                // --- ①音声系：感度50倍調整 ---
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioCtx.createMediaStreamSource(stream);
+                const analyserL = audioCtx.createAnalyser();
+                analyserL.fftSize = 256;
+                source.connect(analyserL);
+
+                const dataL = new Uint8Array(analyserL.fftSize);
+
+                function checkVolume() {
+                    analyserL.getByteTimeDomainData(dataL);
+
+                    let maxL = 0;
+                    for (let i = 0; i < dataL.length; i++) {
+                        const absL = Math.abs(dataL[i] - 128);
+                        if (absL > maxL) maxL = absL;
+                    }
+
+                    const boost = 50; 
+                    const volL = Math.min(((maxL / 127) * 100) * boost, 100);
+
+                    leftFill.style.width = `${volL}%`;
+                    audioRes.innerText = `${volL.toFixed(2)} %`;
+
+                    requestAnimationFrame(checkVolume);
+                }
+
+                // --- ②人認識系：確実な検知＆ターゲットマーク描画 ---
+                function detectPerson() {
+                    // AIモデルが正常にロードされている場合のみ実行
+                    if (video.videoWidth > 0 && model) {
+                        model.detect(video).then(predictions => {
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                            const person = predictions.find(p => p.class === 'person');
+                            
+                            if (person) {
+                                const [x, y, width, height] = person.bbox;
+                                
+                                // ピンクの追従ターゲット枠
+                                ctx.strokeStyle = "#ff007f"; 
+                                ctx.lineWidth = 6;            
+                                ctx.strokeRect(x, y, width, height);
+
+                                // 中心点
+                                ctx.fillStyle = "#ff007f";
+                                ctx.beginPath();
+                                ctx.arc(x + (width / 2), y + (height / 2), 8, 0, 2 * Math.PI);
+                                ctx.fill();
+                                
+                                // 画面中心からのズレ計算
+                                const personCenterX = x + (width / 2);
+                                const videoCenterX = canvas.width / 2;
+                                const diffX = personCenterX - videoCenterX;
+                                const offsetPercent = Math.round((diffX / videoCenterX) * 100);
+
+                                if (Math.abs(offsetPercent) <= 10) {
+                                    personRes.innerText = `👤 正面 (0%)`;
+                                    personRes.style.color = "#00f3ff";
+                                    personRes.style.borderColor = "rgba(0, 243, 255, 0.4)";
+                                    personRes.style.backgroundColor = "rgba(0, 243, 255, 0.1)";
+                                } else if (offsetPercent > 10) {
+                                    personRes.innerText = `👉 右にズレ (${offsetPercent}%)`;
+                                    personRes.style.color = "#ffb700";
+                                    personRes.style.borderColor = "rgba(255, 183, 0, 0.4)";
+                                    personRes.style.backgroundColor = "rgba(255, 183, 0, 0.1)";
+                                } else {
+                                    personRes.innerText = `👈 左にズレ (${Math.abs(offsetPercent)}%)`;
+                                    personRes.style.color = "#ffb700";
+                                    personRes.style.borderColor = "rgba(255, 183, 0, 0.4)";
+                                    personRes.style.backgroundColor = "rgba(255, 183, 0, 0.1)";
+                                }
+                            } else {
+                                personRes.innerText = "✖ NO TARGET";
+                                personRes.style.color = "#64748b";
+                                personRes.style.borderColor = "transparent";
+                                personRes.style.backgroundColor = "#0d1527";
+                            }
+                        }).catch(e => {
+                            console.error("AI判定エラー:", e);
+                        });
+                    }
+                    setTimeout(detectPerson, 100);
+                }
+
+                checkVolume();
+                detectPerson();
+
+            } catch (err) {
+                alert('起動に失敗しました: ' + err.message);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -2,58 +2,65 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>06-24-19</title>
+    <title>06-24-21</title>
     <style>
-        body { margin: 0; background: #0c101b; overflow: hidden; }
-        #eye-canvas { position: absolute; top: 0; left: 0; z-index: 1; }
-        #bottom-panel {
-            position: absolute; bottom: 0; left: 0; width: 100%; height: 160px;
-            background: #161b26; border-top: 2px solid #242b3d;
-            z-index: 10; display: flex; align-items: center; justify-content: space-around;
-        }
-        #btn {
-            position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
-            padding: 16px 45px; z-index: 20; cursor: pointer;
-        }
+        body { margin: 0; background: #0c101b; color: white; font-family: monospace; overflow: hidden; }
+        #canvas { position: absolute; top: 0; left: 0; z-index: 10; }
+        #ui { position: absolute; top: 20px; left: 20px; z-index: 20; pointer-events: none; }
+        #btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 30; padding: 20px; cursor: pointer; color: black; }
     </style>
 </head>
 <body>
-
-    <button id="btn">START TRACKING</button>
-    <canvas id="eye-canvas"></canvas>
-
-    <div id="bottom-panel">
-        <div id="tracking-info" style="color:#00d2ff; font-family:monospace;">STATUS: STANDBY</div>
+    <div id="ui">
+        <div>VERSION: 06-24-21</div>
+        <div id="offset">OFFSET: 0%</div>
     </div>
-
-    <video id="webcam" style="display:none;" autoplay playsinline muted></video>
+    <button id="btn">START TRACKING</button>
+    <canvas id="canvas"></canvas>
+    <video id="v" style="display:none;" autoplay playsinline muted></video>
 
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7"></script>
 
     <script>
-        const canvas = document.getElementById('eye-canvas');
+        const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const video = document.getElementById('webcam');
-        const info = document.getElementById('tracking-info');
+        const v = document.getElementById('v');
+        const offsetText = document.getElementById('offset');
         
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        let curX = 0, targetX = 0;
+        let curX = 0, targetX = 0, faceX = 0;
+        let tracking = false;
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            curX += (targetX - curX) * 0.1;
+            curX += (targetX - curX) * 0.15;
             
             const cy = canvas.height / 2;
-            [canvas.width/2 - 100, canvas.width/2 + 100].forEach(x => {
+            const cx1 = canvas.width / 2 - 120;
+            const cx2 = canvas.width / 2 + 120;
+
+            // --- 一番愛着がわく目 ---
+            [cx1, cx2].forEach(x => {
+                // 白目
                 ctx.fillStyle = "white";
-                ctx.beginPath(); ctx.arc(x, cy, 80, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(x, cy, 90, 0, Math.PI*2); ctx.fill();
+                // 黒目
                 ctx.fillStyle = "#00d2ff";
-                ctx.beginPath(); ctx.arc(x + curX, cy, 40, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(x + curX, cy, 50, 0, Math.PI*2); ctx.fill();
+                // ハイライト（命を宿す）
+                ctx.fillStyle = "white";
+                ctx.beginPath(); ctx.arc(x + curX - 20, cy - 20, 15, 0, Math.PI*2); ctx.fill();
             });
+
+            // --- トラッキングマーク ---
+            if(tracking) {
+                ctx.strokeStyle = "#00d2ff";
+                ctx.lineWidth = 4;
+                ctx.strokeRect(faceX - 50, cy + 150, 100, 20); // 顔の位置を端っこに表示
+            }
             requestAnimationFrame(draw);
         }
         draw();
@@ -61,16 +68,17 @@
         document.getElementById('btn').onclick = async () => {
             const model = await blazeface.load();
             const stream = await navigator.mediaDevices.getUserMedia({video: true});
-            video.srcObject = stream;
+            v.srcObject = stream;
             document.getElementById('btn').style.display = 'none';
+            tracking = true;
 
             async function loop() {
-                const preds = await model.estimateFaces(video, false);
+                const preds = await model.estimateFaces(v, false);
                 if (preds.length > 0) {
-                    const eyes = preds[0].landmarks;
-                    const eyesX = (eyes[0][0] + eyes[1][0]) / 2;
-                    targetX = (eyesX - 320) * 0.3;
-                    info.innerText = `OFFSET: ${Math.round((eyesX/640 - 0.5)*200)}%`;
+                    const centerX = (preds[0].topLeft[0] + preds[0].bottomRight[0]) / 2;
+                    faceX = (centerX / 640) * canvas.width;
+                    targetX = (centerX - 320) * 0.5;
+                    offsetText.innerText = `OFFSET: ${Math.round((centerX/640 - 0.5)*200)}%`;
                 }
                 requestAnimationFrame(loop);
             }

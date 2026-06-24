@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>06-24-8</title>
+    <title>06-24-8 (Vision with Eyes)</title>
     <style>
         :root {
             --bg: #080c14;
@@ -42,18 +42,11 @@
         }
         .card-title { font-size: 12px; font-weight: bold; letter-spacing: 2px; margin-bottom: 15px; text-align: left; color: var(--cyan); opacity: 0.8; }
 
-        /* AUDIO */
-        .audio-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 140px; }
-        #audio-res { font-size: 36px; font-weight: bold; margin-bottom: 20px; }
-        .meter-bar { width: 100%; max-width: 300px; background: #060912; height: 12px; border: 1px solid #161f30; }
-        .fill { height: 100%; width: 0%; background: linear-gradient(90deg, #0066cc, var(--cyan)); box-shadow: 0 0 8px var(--cyan); }
-
-        /* VISION (横並びレイアウト) */
-        .vision-container { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: center; gap: 20px; }
+        .vision-container { display: flex; flex-direction: column; align-items: center; gap: 20px; }
         
         #person-res { 
             font-size: 20px; font-weight: bold; padding: 20px; background: #060912; 
-            border: 1px solid var(--border); border-radius: 4px; min-width: 240px; box-sizing: border-box;
+            border: 1px solid var(--border); border-radius: 4px; width: 100%; box-sizing: border-box;
             letter-spacing: 0.5px; line-height: 1.4;
         }
         
@@ -73,14 +66,6 @@
 
     <div class="dashboard">
         <div class="card">
-            <div class="card-title"> [ AUDIO ANALYZER ]</div>
-            <div class="audio-container">
-                <div id="audio-res">0.00 %</div>
-                <div class="meter-bar"><div id="left-fill" class="fill"></div></div>
-            </div>
-        </div>
-        
-        <div class="card">
             <div class="card-title">[ VISION TRACKER ]</div>
             <div class="vision-container">
                 <div class="camera-wrapper">
@@ -95,21 +80,13 @@
     <script>
         const btn = document.getElementById('btn');
         const statusDiv = document.getElementById('status');
-        const audioRes = document.getElementById('audio-res');
         const personRes = document.getElementById('person-res');
-        const leftFill = document.getElementById('left-fill');
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('overlay');
         const ctx = canvas.getContext('2d');
         
         let model = null;
         
-        // 【修正②】ブラウザの自動破棄(GC)を防ぐため、オーディオ関連インスタンスを関数外で保持
-        let audioCtx = null;
-        let audioSource = null;
-        let analyser = null;
-        let dataArray = null;
-
         (async function loadAI() {
             try {
                 statusDiv.innerText = "LOADING VISION MODEL...";
@@ -117,15 +94,44 @@
                 statusDiv.innerText = "SYSTEM READY";
                 btn.disabled = false;
             } catch (err) {
-                statusDiv.innerText = "VISION OFFLINE / AUDIO ONLY ACTIVE";
-                btn.disabled = false; 
+                statusDiv.innerText = "VISION MODEL LOAD FAILED";
             }
         })();
+
+        // 目を描画する関数
+        function drawEyes(x, y, width, height) {
+            // バウンディングボックスの上部20%を「顔」のエリアとみなす
+            const eyeY = y + (height * 0.15);
+            const eyeSize = width * 0.08; // 目の大きさ
+            const leftEyeX = x + (width * 0.35);
+            const rightEyeX = x + (width * 0.65);
+
+            ctx.fillStyle = "#00d2ff";
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = "#00d2ff";
+
+            // 左目
+            ctx.beginPath();
+            ctx.arc(leftEyeX, eyeY, eyeSize, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // 右目
+            ctx.beginPath();
+            ctx.arc(rightEyeX, eyeY, eyeSize, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // 瞳（黒目）
+            ctx.fillStyle = "#000";
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.arc(leftEyeX, eyeY, eyeSize * 0.4, 0, 2 * Math.PI);
+            ctx.arc(rightEyeX, eyeY, eyeSize * 0.4, 0, 2 * Math.PI);
+            ctx.fill();
+        }
 
         btn.addEventListener('click', async () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true },
                     video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
                 });
 
@@ -134,32 +140,6 @@
                 video.srcObject = stream;
                 video.onloadedmetadata = () => { canvas.width = video.videoWidth; canvas.height = video.videoHeight; };
                 
-                // ① AUDIO (インスタンスをグローバル変数にがっちり固定して接続維持)
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                await audioCtx.resume(); // ブラウザのセキュリティ制限対策
-                
-                analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 256;
-                
-                audioSource = audioCtx.createMediaStreamSource(stream);
-                audioSource.connect(analyser);
-                
-                dataArray = new Uint8Array(analyser.fftSize);
-
-                function checkVolume() {
-                    analyser.getByteTimeDomainData(dataArray);
-                    let maxL = 0;
-                    for (let i = 0; i < dataArray.length; i++) {
-                        const absL = Math.abs(dataArray[i] - 128);
-                        if (absL > maxL) maxL = absL;
-                    }
-                    let volL = (maxL > 1) ? Math.min((((maxL - 1) / 126) * 100) * 50, 100) : 0;
-                    leftFill.style.width = `${volL}%`;
-                    audioRes.innerText = `${volL.toFixed(2)} %`;
-                    requestAnimationFrame(checkVolume);
-                }
-
-                // ② VISION
                 function detectPerson() {
                     if (video.videoWidth > 0 && model) {
                         model.detect(video).then(predictions => {
@@ -168,10 +148,14 @@
                             
                             if (person) {
                                 const [x, y, width, height] = person.bbox;
-                                ctx.strokeStyle = "#00d2ff"; ctx.lineWidth = 3;
+                                
+                                // バウンディングボックスの枠
+                                ctx.strokeStyle = "#00d2ff"; 
+                                ctx.lineWidth = 2;
                                 ctx.strokeRect(x, y, width, height);
-                                ctx.fillStyle = "#00d2ff"; ctx.beginPath();
-                                ctx.arc(x + (width / 2), y + (height / 2), 5, 0, 2 * Math.PI); ctx.fill();
+                                
+                                // 目を描画
+                                drawEyes(x, y, width, height);
                                 
                                 const offset = Math.round(((x + (width / 2)) - (canvas.width / 2)) / (canvas.width / 2) * 100);
 
@@ -195,7 +179,6 @@
                     personRes.style.background = bg;
                 }
 
-                checkVolume();
                 detectPerson();
             } catch (err) { alert('ERROR: ' + err.message); }
         });

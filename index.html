@@ -3,47 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>超高感度チェッカー ＆ 位置ズレAI検知</title>
+    <title>06-24-1</title>
     <style>
         body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding-top: 20px; margin: 0; }
         #btn { padding: 20px 40px; font-size: 20px; cursor: pointer; background: #00ffcc; border: none; border-radius: 5px; font-weight: bold; margin-top: 10px; }
         #btn:disabled { background: #555; color: #aaa; cursor: not-allowed; }
         #status { color: #ffcc00; font-size: 16px; margin-bottom: 10px; }
+        
+        /* 結果表示エリア */
         #result-container { display: flex; justify-content: center; gap: 20px; font-size: 22px; font-weight: bold; margin-top: 20px; min-height: 40px; }
-        .res-box { padding: 10px 20px; border-radius: 5px; background: #333; min-width: 180px; transition: all 0.2s; }
+        .res-box { padding: 10px 20px; border-radius: 5px; background: #333; min-width: 200px; transition: all 0.2s; }
         #audio-res { color: #00ffcc; }
         #person-res { color: #aaa; }
+        
         #display-area { display: flex; justify-content: center; align-items: flex-end; gap: 40px; margin-top: 20px; }
+        
+        /* 音量メーター */
         .meter-container { display: flex; flex-direction: column; align-items: center; }
         .meter { width: 60px; background: #444; height: 240px; position: relative; display: flex; align-items: flex-end; border-radius: 5px; overflow: hidden; margin-top: 10px; }
         .fill { width: 100%; background: linear-gradient(to top, #00ffcc, #ff007f); height: 0%; transition: height 0.05s; }
+        
+        /* カメラ ＆ マーク重ね合わせエリア */
         .video-container { display: flex; flex-direction: column; align-items: center; }
-        /* AIが迷わないよう、HTMLとCSSでサイズを確実に固定 */
-        #webcam { width: 320px; height: 240px; object-fit: cover; background: #000; border-radius: 5px; margin-top: 10px; }
+        .camera-wrapper { position: relative; width: 320px; height: 240px; margin-top: 10px; background: #000; border-radius: 5px; overflow: hidden; }
+        #webcam { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
 </head>
 <body>
 
-    <h1>超高感度 ＆ 位置ズレAI検知</h1>
+    <h1>06-24-1</h1>
     <div id="status">AI起動の準備中...（数秒かかります）</div>
     <button id="btn" disabled>起動する</button>
 
     <div id="result-container">
-        <div id="audio-res" class="res-box">-- 音声 --</div>
+        <div id="audio-res" class="res-box">🎵 音量: 0.00%</div>
         <div id="person-res" class="res-box">-- 人検知 --</div>
     </div>
 
     <div id="display-area">
         <div class="meter-container">
-            <div>CH1 (超高感度)</div>
+            <div>CH1 (極限高感度)</div>
             <div class="meter"><div id="left-fill" class="fill"></div></div>
         </div>
         
         <div class="video-container">
-            <div>インカメ映像</div>
-            <video id="webcam" autoplay playsinline muted width="320" height="240"></video>
+            <div>インカメ映像（自動マーク）</div>
+            <div class="camera-wrapper">
+                <video id="webcam" autoplay playsinline muted></video>
+                <canvas id="overlay"></canvas>
+            </div>
         </div>
     </div>
 
@@ -54,10 +65,12 @@
         const personRes = document.getElementById('person-res');
         const leftFill = document.getElementById('left-fill');
         const video = document.getElementById('webcam');
+        const canvas = document.getElementById('overlay');
+        const ctx = canvas.getContext('2d');
 
         let model = null;
 
-        // AIモデルのロード
+        // AIモデルの事前ロード
         cocoSsd.load().then(loadedModel => {
             model = loadedModel;
             statusDiv.innerText = "AI準備完了！ボタンを押せます。";
@@ -70,18 +83,17 @@
 
         btn.addEventListener('click', async () => {
             try {
-                // マイクとインカメ（サイズを指定して確実性をアップ）
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         channelCount: 1,
                         echoCancellation: false,
                         noiseSuppression: false,
-                        autoGainControl: true
+                        autoGainControl: true // スマホのハードウェア自動感度UP
                     },
                     video: {
                         facingMode: "user",
-                        width: 320,
-                        height: 240
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
                     }
                 });
 
@@ -89,8 +101,14 @@
                 statusDiv.style.display = 'none';
                 
                 video.srcObject = stream;
+
+                // カメラの実際の解像度に合わせてキャンバスの内部サイズを完全一致させる（これでマークがズレなくなる）
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                };
                 
-                // --- ①マイク音量の超高感度解析 ---
+                // --- ①マイク音量の「極限」高感度解析 ＆ 数値化 ---
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 const source = audioCtx.createMediaStreamSource(stream);
                 const analyserL = audioCtx.createAnalyser();
@@ -108,74 +126,43 @@
                         if (absL > maxL) maxL = absL;
                     }
 
-                    const boost = 10; 
+                    // 【極限設定】前回の倍率をさらに倍、通常の『200倍』に数値をブースト
+                    const boost = 200; 
                     const volL = Math.min(((maxL / 127) * 100) * boost, 100);
 
+                    // メーターの表示更新
                     leftFill.style.height = `${volL}%`;
-
-                    if (volL > 2) {
-                        audioRes.innerText = "🎵 音声を検知！";
-                    } else {
-                        audioRes.innerText = "-- 静かです --";
-                    }
+                    
+                    // 音量を小数点以下2桁までリアルタイム数値表示
+                    audioRes.innerText = `🎵 音量: ${volL.toFixed(2)}%`;
 
                     requestAnimationFrame(checkVolume);
                 }
 
-                // --- ②AIによるリアルタイム人検知 ＆ ズレ計算 ---
+                // --- ②AIによる確実な人検知 ＆ ターゲットマーク描画 ---
                 function detectPerson() {
-                    if (video.readyState === video.HAVE_CURRENT_DATA) {
+                    if (video.videoWidth > 0 && model) {
                         model.detect(video).then(predictions => {
-                            // 検出された中から「人(person)」だけを探す
+                            // 前回の描画マークをいったん全部消去
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                            // 「人 (person)」を探す
                             const person = predictions.find(p => p.class === 'person');
                             
                             if (person) {
-                                // 検出した人の位置 [左端のX座標, 上端のY座標, 横幅, 縦幅]
                                 const [x, y, width, height] = person.bbox;
                                 
-                                // 人の中心のX座標を計算
+                                // 【機能追加】人の周りにピンポイントで枠（マーク）を描画
+                                ctx.strokeStyle = "#ff007f"; // 鮮やかなピンクマゼンタ
+                                ctx.lineWidth = 6;            // スマホでも見やすい極太線
+                                ctx.strokeRect(x, y, width, height);
+
+                                // 中心の照準ドットも描画
+                                ctx.fillStyle = "#ff007f";
+                                ctx.beginPath();
+                                ctx.arc(x + (width / 2), y + (height / 2), 8, 0, 2 * Math.PI);
+                                ctx.fill();
+                                
+                                // 横方向のズレパーセンテージ計算
                                 const personCenterX = x + (width / 2);
-                                // 画面の中心のX座標 (320px の半分で 160)
-                                const videoCenterX = 160; 
-                                
-                                // 中心からのズレを計算 (-160 〜 +160 の範囲になる)
-                                const diffX = personCenterX - videoCenterX;
-                                
-                                // ズレをパーセンテージに変換（真ん中が0%、一番右が+100%、一番左が-100%）
-                                const offsetPercent = Math.round((diffX / videoCenterX) * 100);
-
-                                // 画面への表示処理（小さなズレは正面とみなす）
-                                if (Math.abs(offsetPercent) <= 10) {
-                                    personRes.innerText = "👤 正面（ズレ0%）";
-                                    personRes.style.color = "#00ffcc";
-                                    personRes.style.backgroundColor = "rgba(0, 255, 204, 0.2)";
-                                } else if (offsetPercent > 10) {
-                                    personRes.innerText = `👉 右にズレ (${offsetPercent}%)`;
-                                    personRes.style.color = "#ffaa00";
-                                    personRes.style.backgroundColor = "rgba(255, 170, 0, 0.2)";
-                                } else {
-                                    personRes.innerText = `👈 左にズレ (${Math.abs(offsetPercent)}%)`;
-                                    personRes.style.color = "#ffaa00";
-                                    personRes.style.backgroundColor = "rgba(255, 170, 0, 0.2)";
-                                }
-                            } else {
-                                personRes.innerText = "✖ 誰もいない";
-                                personRes.style.color = "#aaa";
-                                personRes.style.backgroundColor = "#333";
-                            }
-                        });
-                    }
-                    // スマホが熱くならないよう、約0.15秒ごとに計算
-                    setTimeout(detectPerson, 150);
-                }
-
-                checkVolume();
-                detectPerson();
-
-            } catch (err) {
-                alert('起動に失敗しました。マイクとカメラの両方の権限を許可してください: ' + err);
-            }
-        });
-    </script>
-</body>
-</html>
+                                const videoCenterX =

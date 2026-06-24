@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>06-24-4</title>
+    <title>06-24-3</title>
     <style>
         :root {
             --bg-color: #0a0f1d;
@@ -42,6 +42,7 @@
             font-weight: 500;
         }
 
+        /* 起動ボタンのスタイリッシュ化 */
         #btn {
             padding: 16px 40px;
             font-size: 18px;
@@ -66,6 +67,7 @@
             cursor: not-allowed;
         }
 
+        /* ダッシュボードレイアウト（音声と映像を分離） */
         .dashboard {
             display: flex;
             justify-content: center;
@@ -180,13 +182,13 @@
             pointer-events: none;
         }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 </head>
 <body>
 
-    <h1>06-24-4</h1>
-    <div id="status">AIシステム初期化中...</div>
+    <h1>06-24-3</h1>
+    <div id="status">システム初期化中...</div>
     <button id="btn" disabled>システムを起動</button>
 
     <div class="dashboard">
@@ -224,31 +226,25 @@
 
         let model = null;
 
-        // 【改善案1】window.onloadを排除。スクリプトが読まれたら「即座」にロードを開始
-        async function loadAI() {
-            try {
-                if (typeof tf === 'undefined' || typeof cocoSsd === 'undefined') {
-                    throw new Error("ライブラリが読み込まれていません");
-                }
-                
-                statusDiv.innerText = "AIモデル（最速版）をダウンロード中...";
-                
-                // 【改善案2】最も配信が安定している標準のmobilenet_v2を使用
-                model = await cocoSsd.load({ base: 'mobilenet_v2' });
-                
+        window.addEventListener('load', () => {
+            if (typeof tf === 'undefined' || typeof cocoSsd === 'undefined') {
+                statusDiv.innerText = "エラー: ライブラリの読み込みに失敗しました。";
+                statusDiv.style.color = "#ff007f";
+                return;
+            }
+
+            statusDiv.innerText = "AIモデル（超軽量版）をロード中...";
+
+            cocoSsd.load({ base: 'lite_mobilenet_v2' }).then(loadedModel => {
+                model = loadedModel;
                 statusDiv.innerText = "READY";
                 statusDiv.style.color = "#00f3ff";
                 btn.disabled = false;
-            } catch (err) {
-                // 【改善案3】万が一ネットワーク等の理由でエラーになっても、強制的にボタンを使えるようにする（マイクだけでも動かす保険）
-                statusDiv.innerText = "AI一時不調：ボタンを強制有効化しました (エラー: " + err.message + ")";
+            }).catch(err => {
+                statusDiv.innerText = "ロード失敗: " + err.message;
                 statusDiv.style.color = "#ff007f";
-                btn.disabled = false; 
-            }
-        }
-
-        // 即時実行
-        loadAI();
+            });
+        });
 
         btn.addEventListener('click', async () => {
             try {
@@ -276,7 +272,7 @@
                     canvas.height = video.videoHeight;
                 };
                 
-                // --- ①音声系：感度50倍調整 ---
+                // --- ①音声系：感度調整（50倍ブースト） ＆ スタイリッシュ化 ---
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 const source = audioCtx.createMediaStreamSource(stream);
                 const analyserL = audioCtx.createAnalyser();
@@ -294,18 +290,19 @@
                         if (absL > maxL) maxL = absL;
                     }
 
+                    // 【感度調整】200倍から50倍にマイルド化（遠くの音を拾いつつノイズ跳ねを抑制）
                     const boost = 50; 
                     const volL = Math.min(((maxL / 127) * 100) * boost, 100);
 
+                    // 横型メーターをなめらかに更新
                     leftFill.style.width = `${volL}%`;
                     audioRes.innerText = `${volL.toFixed(2)} %`;
 
                     requestAnimationFrame(checkVolume);
                 }
 
-                // --- ②人認識系：確実な検知＆ターゲットマーク描画 ---
+                // --- ②人認識系：軽量AI ＆ 画面内ターゲットマーク描画 ---
                 function detectPerson() {
-                    // AIモデルが正常にロードされている場合のみ実行
                     if (video.videoWidth > 0 && model) {
                         model.detect(video).then(predictions => {
                             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -315,12 +312,12 @@
                             if (person) {
                                 const [x, y, width, height] = person.bbox;
                                 
-                                // ピンクの追従ターゲット枠
+                                // 人の周りにターゲットマーク（ネオンピンクの枠）を描画
                                 ctx.strokeStyle = "#ff007f"; 
                                 ctx.lineWidth = 6;            
                                 ctx.strokeRect(x, y, width, height);
 
-                                // 中心点
+                                // 中心点（照準ドット）
                                 ctx.fillStyle = "#ff007f";
                                 ctx.beginPath();
                                 ctx.arc(x + (width / 2), y + (height / 2), 8, 0, 2 * Math.PI);
@@ -350,7 +347,7 @@
                                 }
                             } else {
                                 personRes.innerText = "✖ NO TARGET";
-                                personRes.style.color = "#64748b";
+                                personRes.style.color = var(--text-muted);
                                 personRes.style.borderColor = "transparent";
                                 personRes.style.backgroundColor = "#0d1527";
                             }

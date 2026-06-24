@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音源方向チェッカー</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding-top: 50px; }
+        #btn { padding: 20px 40px; font-size: 20px; cursor: pointer; }
+        #result { font-size: 48px; font-weight: bold; margin-top: 50px; color: #00ffcc; }
+        #meters { display: flex; justify-content: center; gap: 40px; margin-top: 30px; }
+        .meter { width: 50px; background: #444; height: 200px; position: relative; display: flex; align-items: flex-end; }
+        .fill { width: 100%; background: #00ffcc; height: 0%; transition: height 0.1s; }
+    </style>
+</head>
+<body>
+
+    <h1>音源方向チェッカー</h1>
+    <p>スマホを【横向き】にして置いてください</p>
+    <button id="btn">マイクを起動</button>
+
+    <div id="meters">
+        <div>左マイク<div class="meter"><div id="left-fill" class="fill"></div></div></div>
+        <div>右マイク<div class="meter"><div id="right-fill" class="fill"></div></div></div>
+    </div>
+
+    <div id="result">--</div>
+
+    <script>
+        const btn = document.getElementById('btn');
+        const resultDiv = document.getElementById('result');
+        const leftFill = document.getElementById('left-fill');
+        const rightFill = document.getElementById('right-fill');
+
+        btn.addEventListener('click', async () => {
+            try {
+                // ステレオでマイクを取得（ノイズサプレッション等は位相や音量を歪めるのでOFF）
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 2,
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+
+                btn.style.display = 'none';
+                
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioCtx.createMediaStreamSource(stream);
+                
+                // 左右のチャンネルを分離するスプリッター
+                const splitter = audioCtx.createChannelSplitter(2);
+                source.connect(splitter);
+
+                // 左チャンネル用の解析器
+                const analyserL = audioCtx.createAnalyser();
+                splitter.connect(analyserL, 0);
+
+                // 右チャンネル用の解析器
+                const analyserR = audioCtx.createAnalyser();
+                splitter.connect(analyserR, 1);
+
+                const dataL = new Uint8Array(analyserL.frequencyBinCount);
+                const dataR = new Uint8Array(analyserR.frequencyBinCount);
+
+                function checkDirection() {
+                    analyserL.getByteFrequencyData(dataL);
+                    analyserR.getByteFrequencyData(dataR);
+
+                    // 左右それぞれの平均音量を計算
+                    const volL = dataL.reduce((a, b) => a + b, 0) / dataL.length;
+                    const volR = dataR.reduce((a, b) => a + b, 0) / dataR.length;
+
+                    // 視覚化用のメーター更新
+                    leftFill.style.height = `${(volL / 255) * 100}%`;
+                    rightFill.style.height = `${(volR / 255) * 100}%`;
+
+                    // 一定以上の音量がある場合のみ判定（雑音対策）
+                    if (volL > 5 || volR > 5) {
+                        const diff = volL - volR;
+                        const threshold = 1.5; // 判定の閾値（適宜調整してください）
+
+                        if (diff > threshold) {
+                            resultDiv.innerText = "⬅️ 左から検知！";
+                        } else if (diff < -threshold) {
+                            resultDiv.innerText = "右から検知！ ➡️";
+                        } else {
+                            resultDiv.innerText = "⏺ 正面付近";
+                        }
+                    } else {
+                        resultDiv.innerText = "-- 静かです --";
+                    }
+
+                    requestAnimationFrame(checkDirection);
+                }
+
+                checkDirection();
+
+            } catch (err) {
+                alert('マイクの起動に失敗しました。ステレオマイク非対応の可能性があります: ' + err);
+            }
+        });
+    </script>
+</body>
+</html>

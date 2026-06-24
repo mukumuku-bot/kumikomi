@@ -3,11 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>06-24-10</title>
+    <title>06-24-11</title>
     <style>
         :root {
-            --bg: #050810;
+            --bg: #0c101b;
+            --card: #161b26;
+            --border: #242b3d;
             --cyan: #00d2ff;
+            --pink: #ff6496;
             --text: #e2e8f0;
         }
         html, body {
@@ -15,59 +18,83 @@
             background: var(--bg); color: var(--text);
             font-family: 'Consolas', 'Courier New', monospace, sans-serif; overflow: hidden;
         }
-        
-        /* 【上に音声】極限までシンプルにした上部音声インジケーター */
-        #audio-panel {
-            position: absolute; top: 0; left: 0; width: 100%;
-            padding: 12px 20px; box-sizing: border-box; z-index: 10;
-            background: rgba(5, 8, 16, 0.85);
-            display: flex; align-items: center; justify-content: center; gap: 15px;
-            border-bottom: 1px solid #101a30; pointer-events: none;
+
+        /* メイン：二個の目用全画面キャンバス */
+        #eye-canvas { position: absolute; top: 0; left: 0; width: 100%; height: calc(100% - 160px); z-index: 1; }
+
+        /* 下部：コントロール＆ステータス統合パネル */
+        #bottom-panel {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 160px;
+            background: var(--card); border-top: 2px solid var(--border);
+            box-sizing: border-box; p-index: 10;
+            display: flex; align-items: center; justify-content: space-around; padding: 10px;
         }
-        #audio-res { font-size: 15px; font-weight: bold; width: 70px; text-align: right; color: var(--cyan); }
-        .meter-bar { width: 150px; background: #0c1322; height: 5px; border-radius: 2px; overflow: hidden; }
-        .fill { height: 100%; width: 0%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
 
-        /* 全画面表示の「目」用キャンバス */
-        #eye-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        .panel-section { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
 
-        /* クール調起動ボタン */
+        /* カメラ表示（下部に復活・コンパクト化） */
+        .camera-wrapper { position: relative; width: 160px; height: 120px; background: #000; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+        #webcam { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); } /* 鏡映しに補正 */
+
+        /* トラッキング情報（文字を大きく分かりやすく） */
+        #tracking-info {
+            font-size: 18px; font-weight: bold; color: var(--cyan); text-align: left;
+            min-width: 260px; line-height: 1.5; letter-spacing: 1px;
+            background: #090d16; padding: 15px; border: 1px solid var(--border); border-radius: 4px;
+        }
+
+        /* 音声メーター（コンパクト版） */
+        .audio-box { display: flex; flex-direction: column; gap: 8px; width: 140px; font-size: 12px; }
+        .meter-bar { width: 100%; background: #090d16; height: 6px; border-radius: 3px; overflow: hidden; border: 1px solid var(--border); }
+        .fill { height: 100%; width: 0%; background: var(--cyan); }
+
+        /* 起動ボタン */
         #btn {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            padding: 15px 40px; font-size: 15px; font-weight: bold; cursor: pointer;
+            position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            padding: 16px 45px; font-size: 16px; font-weight: bold; cursor: pointer;
             color: var(--bg); background: var(--cyan); border: none; border-radius: 4px;
-            box-shadow: 0 0 20px rgba(0, 210, 255, 0.4); z-index: 20;
-            letter-spacing: 2px; text-transform: uppercase;
+            box-shadow: 0 0 25px rgba(0, 210, 255, 0.4); z-index: 20; letter-spacing: 2px;
         }
-        #btn:disabled { background: #111724; color: #475569; box-shadow: none; cursor: not-allowed; }
-        #status {
-            position: absolute; bottom: 30px; left: 0; width: 100%; text-align: center;
-            font-size: 12px; color: var(--cyan); letter-spacing: 2px; z-index: 10;
-        }
+        #btn:disabled { background: #1a2333; color: #475569; box-shadow: none; cursor: not-allowed; }
+        #status { position: absolute; top: calc(40% + 50px); left: 0; width: 100%; text-align: center; font-size: 13px; color: var(--cyan); z-index: 20; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7"></script>
 </head>
 <body>
 
-    <div id="audio-panel">
-        <span style="font-size:11px; letter-spacing:1px;">AUDIO_AUDIO ANALYZER</span>
-        <div class="meter-bar"><div id="left-fill" class="fill"></div></div>
-        <div id="audio-res">0.00%</div>
-    </div>
-
     <button id="btn" disabled>INITIALIZING...</button>
-    <div id="status">LOADING EYE-TRACKING CORE...</div>
+    <div id="status">LOADING ANIME VISION ENGINE...</div>
 
-    <video id="webcam" autoplay playsinline muted style="display:none;"></video>
-    
     <canvas id="eye-canvas"></canvas>
+
+    <div id="bottom-panel">
+        <div class="panel-section audio-box">
+            <span style="opacity: 0.6;">AUDIO ANALYZER</span>
+            <div id="audio-res" style="font-weight:bold; font-size:14px; color:var(--cyan);">0.00%</div>
+            <div class="meter-bar"><div id="left-fill" class="fill"></div></div>
+        </div>
+
+        <div class="panel-section">
+            <div id="tracking-info">
+                STATUS: STANDBY<br>
+                OFFSET: -- %
+            </div>
+        </div>
+
+        <div class="panel-section">
+            <div class="camera-wrapper">
+                <video id="webcam" autoplay playsinline muted></video>
+            </div>
+        </div>
+    </div>
 
     <script>
         const btn = document.getElementById('btn');
         const statusDiv = document.getElementById('status');
         const audioRes = document.getElementById('audio-res');
         const leftFill = document.getElementById('left-fill');
+        const trackingInfo = document.getElementById('tracking-info');
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('eye-canvas');
         const ctx = canvas.getContext('2d');
@@ -75,30 +102,37 @@
         let model = null;
         let audioCtx = null, analyser = null, dataArray = null;
 
-        // 目のアニメーション制御
-        let eyePos = { x: 0, y: 0 };      // 現在の目の位置
-        let targetPos = { x: 0, y: 0 };   // 目標の位置
-        let personOffset = 0;             // 人の左右のズレ（-1.0〜1.0）
+        // 視線コントロール用の変数（それっぽさを出すための滑らかな数値移行）
+        let currentX = 0; 
+        let targetX = 0;
         let hasPerson = false;
-        let lastIdlingTime = 0;
-        let idleRandomX = 0;
-        let idleRandomY = 0;
+        let personPercent = 0;
+
+        // まばたきコントロール
+        let blinkScale = 1.0; 
+        let isBlinking = false;
+        let nextBlinkTime = Date.now() + 3000;
+
+        // アイドリング（キョロキョロ）用
+        let lastIdleTime = 0;
+        let idleTargetX = 0;
 
         function resizeCanvas() {
             canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            canvas.height = window.innerHeight - 160; // 下部パネルの分を引く
         }
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
+        // AIモデルロード
         (async function loadAI() {
             try {
                 model = await blazeface.load();
-                statusDiv.innerText = "SYSTEM READY";
-                btn.innerText = "ACTIVATE EYE";
+                statusDiv.innerText = "EYE SYSTEM READY";
+                btn.innerText = "START ANIME EYES";
                 btn.disabled = false;
             } catch (err) {
-                statusDiv.innerText = "CRITICAL ERROR / VISION OFFLINE";
+                statusDiv.innerText = "ENGINE ERROR";
             }
         })();
 
@@ -106,7 +140,6 @@
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true },
-                    // AI処理を極限まで軽くするためカメラ内部解像度をあえて低めに設定
                     video: { facingMode: "user", width: 320, height: 240 } 
                 });
 
@@ -134,7 +167,7 @@
                     requestAnimationFrame(checkVolume);
                 }
 
-                // ② 裏で高速動作するAI視線ロジック
+                // ② トラッキング（精度より滑らかさ重視）
                 function detect() {
                     if (video.videoWidth > 0 && model) {
                         model.estimateFaces(video, false).then(predictions => {
@@ -142,92 +175,156 @@
                                 hasPerson = true;
                                 const landmarks = predictions[0].landmarks;
                                 const eyesCenterX = (landmarks[0][0] + landmarks[1][0]) / 2;
-                                // 鏡映し状態を補正して左右の比率を算出 (-1.0 〜 +1.0)
-                                personOffset = -((eyesCenterX - 160) / 160); 
+                                
+                                // 画面中央からのズレを算出 (-100% 〜 +100%)
+                                personPercent = Math.round(((eyesCenterX - 160) / 160) * 100);
+                                if (personPercent > 100) personPercent = 100;
+                                if (personPercent < -100) personPercent = -100;
+
+                                // 目標の視線位置（左右の最大振れ幅を考慮）
+                                targetX = (personPercent / 100) * 35; 
+
+                                // 下部のテキスト表示を更新
+                                if (Math.abs(personPercent) <= 12) {
+                                    trackingInfo.innerHTML = `STATUS: <span style="color:var(--cyan);">LOCK_ON (CENTER)</span><br>OFFSET: 0%`;
+                                } else {
+                                    const dir = personPercent > 0 ? "RIGHT" : "LEFT";
+                                    trackingInfo.innerHTML = `STATUS: <span style="color:#ffffff;">TRACKING_${dir}</span><br>OFFSET: ${personPercent > 0 ? '+' : ''}${personPercent}%`;
+                                }
                             } else {
                                 hasPerson = false;
+                                trackingInfo.innerHTML = `STATUS: <span style="color:#475569;">SEARCHING...</span><br>OFFSET: -- %`;
                             }
                         });
                     }
-                    setTimeout(detect, 50); // 最適な検出スパンで動作
+                    setTimeout(detect, 60); 
                 }
 
-                // ③ 全画面の目：描画 ＆【遊ばせる動き】ループ
+                // ③ アニメ目の描画＆自律アニメーション
                 function drawLoop() {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-                    const centerX = canvas.width / 2;
-                    const centerY = canvas.height / 2;
-                    const maxEyeMove = Math.min(canvas.width, canvas.height) * 0.18; // 目の可動範囲
                     const now = Date.now();
 
+                    // --- 視線の動きの計算（ヌルヌル動かす） ---
                     if (hasPerson) {
-                        // 【遊びの動き①：生体ジッター】
-                        // 人をキリッと見つめつつ、生き物らしさを出すために常に微細にピクピクと震わせる
-                        const jitterX = Math.sin(now / 120) * 5;
-                        const jitterY = Math.cos(now / 80) * 3;
-                        
-                        targetPos.x = personOffset * maxEyeMove + jitterX;
-                        targetPos.y = jitterY;
+                        // 人がいる時は、ジワッとそちらを見つめる（補間係数 0.08 でなめらかに）
+                        currentX += (targetX - currentX) * 0.08;
                     } else {
-                        // 【遊びの動き②：自律キョロキョロモード】
-                        // 人がいない時は、約1.8秒ごとに「ハッ」とあらぬ方向をランダムに見渡す
-                        if (now - lastIdlingTime > 1800) {
-                            idleRandomX = (Math.random() - 0.5) * 2 * maxEyeMove;
-                            idleRandomY = (Math.random() - 0.5) * 1.2 * maxEyeMove;
-                            lastIdlingTime = now;
+                        // 人がいない時は、キョロキョロ泳がせる
+                        if (now > lastIdleTime) {
+                            idleTargetX = (Math.random() - 0.5) * 50; // ランダムな方向
+                            lastIdleTime = now + 1500 + Math.random() * 1500;
                         }
-                        // アイドリング位置へゆったり呼吸するように合流
-                        targetPos.x = idleRandomX + Math.sin(now / 500) * 6;
-                        targetPos.y = idleRandomY + Math.cos(now / 400) * 4;
+                        currentX += (idleTargetX - currentX) * 0.05;
                     }
 
-                    // 線形補間(イージング)で、黒目の動きをヌルヌル滑らかにする
-                    eyePos.x += (targetPos.x - eyePos.x) * 0.12;
-                    eyePos.y += (targetPos.y - eyePos.y) * 0.12;
+                    // --- まばたきロジック ---
+                    if (!isBlinking && now > nextBlinkTime) {
+                        isBlinking = true;
+                    }
+                    if (isBlinking) {
+                        blinkScale -= 0.25; // 高速で目を閉じる
+                        if (blinkScale <= 0) {
+                            blinkScale = 0;
+                            isBlinking = false; // 反転して開くフェーズへ
+                        }
+                    } else if (blinkScale < 1.0) {
+                        blinkScale += 0.2; // スパッと開く
+                        if (blinkScale >= 1.0) {
+                            blinkScale = 1.0;
+                            nextBlinkTime = now + 2000 + Math.random() * 4000; // 次のまばたきまでの時間設定
+                        }
+                    }
 
-                    // --- クールなSFサイバー・アイの描画 ---
-                    const baseRadius = Math.min(canvas.width, canvas.height) * 0.22;
-
-                    // 1. 固定の外枠サークル
-                    ctx.strokeStyle = "rgba(0, 210, 255, 0.1)";
-                    ctx.lineWidth = 1;
-                    ctx.beginPath(); ctx.arc(centerX, centerY, baseRadius * 1.4, 0, Math.PI * 2); ctx.stroke();
-
-                    // 2. メインの目枠（ロックオンサークル）
-                    ctx.strokeStyle = "rgba(0, 210, 255, 0.3)";
-                    ctx.lineWidth = 3;
-                    ctx.beginPath(); ctx.arc(centerX, centerY, baseRadius, 0, Math.PI * 2); ctx.stroke();
-
-                    // 十字スリット
-                    ctx.strokeStyle = "rgba(0, 210, 255, 0.08)";
-                    ctx.lineWidth = 1;
-                    ctx.beginPath(); ctx.moveTo(centerX - baseRadius, centerY); ctx.lineTo(centerX + baseRadius, centerY); ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(centerX, centerY - baseRadius); ctx.lineTo(centerX, centerY + baseRadius); ctx.stroke();
-
-                    // 3. 動く虹彩・瞳孔コア（ターゲットを追従）
-                    const pupilX = centerX + eyePos.x;
-                    const pupilY = centerY + eyePos.y;
-
-                    // 虹彩リング（グローエフェクト付き）
-                    ctx.strokeStyle = "var(--cyan)";
-                    ctx.lineWidth = 4;
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = "var(--cyan)";
-                    ctx.beginPath(); ctx.arc(pupilX, pupilY, baseRadius * 0.42, 0, Math.PI * 2); ctx.stroke();
-
-                    // 瞳孔（中心コア）
-                    ctx.fillStyle = "var(--cyan)";
-                    ctx.beginPath(); ctx.arc(pupilX, pupilY, baseRadius * 0.15, 0, Math.PI * 2); ctx.fill();
+                    // --- 2個の目の描画パラメータ ---
+                    const centerX = canvas.width / 2;
+                    const centerY = canvas.height / 2;
                     
-                    ctx.shadowBlur = 0; // 負荷軽減のためシャドウ即解除
+                    // 画面サイズに応じて目のサイズと間隔を黄金比で自動計算
+                    const eyeWidth = Math.min(canvas.width, canvas.height) * 0.22;
+                    const eyeHeight = eyeWidth * 1.2; // アニメ風に少し縦長の可愛い楕円に
+                    const eyeSpacing = eyeWidth * 1.1; // 目と目の距離
 
-                    // システムテキスト（キャンバス一体型で超軽量）
-                    ctx.fillStyle = hasPerson ? "var(--cyan)" : "#475569";
-                    ctx.font = "11px 'Consolas'";
-                    ctx.textAlign = "center";
-                    const statusText = hasPerson ? `SYS_LOCK_ON // TRK_OFFSET: ${Math.round(personOffset * 100)}%` : "SYS_SEARCHING_TARGET...";
-                    ctx.fillText(statusText, centerX, centerY + baseRadius * 1.8);
+                    // 左目と右目の中心座標
+                    const leftEyeCenter = { x: centerX - eyeSpacing, y: centerY };
+                    const rightEyeCenter = { x: centerX + eyeSpacing, y: centerY };
+
+                    function drawAnimeEye(center) {
+                        ctx.save();
+                        ctx.translate(center.x, center.y);
+                        ctx.scale(1.0, blinkScale); // まばたき変形を適用
+
+                        // 1. 白目（ベースのクリアな楕円）
+                        ctx.fillStyle = "#ffffff";
+                        ctx.beginPath();
+                        ctx.ellipse(0, 0, eyeWidth, eyeHeight, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // 2. 目のふち・アイライン（太めのアニメ風スタイル）
+                        ctx.strokeStyle = "#1b2030";
+                        ctx.lineWidth = 8;
+                        ctx.stroke();
+
+                        // 白目からはみ出さないようにクリッピングマスクを設定
+                        ctx.clip();
+
+                        // 3. 巨大な黒目（カラコン・虹彩）
+                        // カメラの動き「currentX」に合わせて左右にスムーズに動く
+                        const irisX = currentX; 
+                        const irisY = 5; // 微妙に上目遣いっぽくして可愛さを演出
+                        const irisRadius = eyeWidth * 0.75;
+
+                        // グラデーションでアニメ調の深みのある綺麗な青目に
+                        const irisGrad = ctx.createRadialGradient(irisX, irisY, 5, irisX, irisY, irisRadius);
+                        irisGrad.addColorStop(0, "#003c66"); // 中心は深く暗い紺
+                        irisGrad.addColorStop(0.6, "var(--cyan)"); // 外側に向けて鮮やかな水色
+                        irisGrad.addColorStop(1, "#008bbb");
+                        
+                        ctx.fillStyle = irisGrad;
+                        ctx.beginPath();
+                        ctx.arc(irisX, irisY, irisRadius, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // 4. 瞳孔（目の中心のコア）
+                        ctx.fillStyle = "#060a12";
+                        ctx.beginPath();
+                        ctx.arc(irisX, irisY + 5, irisRadius * 0.35, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // 5. アニメ目の命：ハイライト（白いつや輝き）
+                        // これが入ることで一気に「それっぽい」二次元のキュートな質感になります
+                        ctx.fillStyle = "#ffffff";
+                        
+                        // メインの大きなハイライト（右上固定、または視線に連動）
+                        ctx.beginPath();
+                        ctx.arc(irisX - 15, irisY - 25, 14, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // サブの小さなハイライト（左下）
+                        ctx.beginPath();
+                        ctx.arc(irisX + 20, irisY + 25, 6, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        ctx.restore();
+                        
+                        // まばたき（完全に閉じている時）の可愛い横一本線のアイライン描写
+                        if (blinkScale <= 0.05) {
+                            ctx.save();
+                            ctx.translate(center.x, center.y);
+                            ctx.strokeStyle = "#1b2030";
+                            ctx.lineWidth = 10;
+                            ctx.lineCap = "round";
+                            ctx.beginPath();
+                            ctx.moveTo(-eyeWidth, 0);
+                            ctx.lineTo(eyeWidth, 0);
+                            ctx.stroke();
+                            ctx.restore();
+                        }
+                    }
+
+                    // 両目を描画
+                    drawAnimeEye(leftEyeCenter);
+                    drawAnimeEye(rightEyeCenter);
 
                     requestAnimationFrame(drawLoop);
                 }

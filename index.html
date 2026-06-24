@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>06-24-17</title>
+    <title>06-24-18</title>
     <style>
         :root {
             --bg: #0c101b;
@@ -18,17 +18,15 @@
             font-family: 'Consolas', 'Courier New', monospace, sans-serif; overflow: hidden;
         }
 
-        /* メイン：二個の目用全画面キャンバス（CSSで完全にサイズを固定し、消滅を防ぐ） */
+        /* メインキャンバス：位置を完全に固定 */
         #eye-canvas { 
             position: absolute; 
             top: 0; 
             left: 0; 
-            width: 100vw; 
-            height: calc(100vh - 160px); 
             z-index: 1; 
         }
 
-        /* 下部：コントロール＆ステータス統合パネル */
+        /* 下部パネル：高さ160pxで完全に固定 */
         #bottom-panel {
             position: absolute; bottom: 0; left: 0; width: 100%; height: 160px;
             background: var(--card); border-top: 2px solid var(--border);
@@ -53,7 +51,7 @@
             background: #090d16; padding: 15px; border: 1px solid var(--border); border-radius: 4px;
         }
 
-        /* 右側：カメラ表示（周りへの影響を防ぐため絶対配置で隔離） */
+        /* 右側：カメラ表示（サイズを完全にガチガチに固定） */
         .camera-wrapper { 
             position: relative; 
             width: 160px; 
@@ -63,7 +61,7 @@
             border-radius: 4px; 
             overflow: hidden; 
         }
-        #webcam { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        #webcam { width: 160px; height: 120px; object-fit: cover; transform: scaleX(-1); }
 
         /* 起動ボタン */
         #btn {
@@ -88,7 +86,7 @@
     <div id="bottom-panel">
         <div class="panel-section">
             <div class="title-box">
-                06-24-17
+                06-24-18
                 <div class="title-sub">VISION SYSTEM</div>
             </div>
         </div>
@@ -129,25 +127,21 @@
         let lastIdleTime = 0;
         let idleTargetX = 0;
 
-        // 【改善】リサイズ時は純粋に解像度（ピクセル数）の同期だけを行う（0に潰れるのを防ぐ）
-        function resizeCanvas() {
-            const rect = canvas.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0) {
-                canvas.width = rect.width;
-                canvas.height = rect.height;
-            }
-        }
-        window.addEventListener('resize', resizeCanvas);
-        // 初回実行
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight - 160;
+        // 【大手術】自動リサイズイベント（resize）を完全に抹消。
+        // ページを開いた瞬間の画面サイズを、そのままピクセル値として「何が何でも固定」する。
+        const fixedWidth = window.innerWidth;
+        const fixedHeight = window.innerHeight - 160;
 
-        // 目の描画ループ（最初から稼働）
+        canvas.width = fixedWidth;
+        canvas.height = fixedHeight;
+        canvas.style.width = fixedWidth + 'px';
+        canvas.style.height = fixedHeight + 'px';
+
+        // 目の描画ループ
         function drawLoop() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             const now = Date.now();
 
-            // 視線追従の計算
             if (hasPerson) {
                 currentX += (targetX - currentX) * 0.08;
             } else {
@@ -158,7 +152,6 @@
                 currentX += (idleTargetX - currentX) * 0.05;
             }
 
-            // まばたき計算
             if (!isBlinking && now > nextBlinkTime) {
                 isBlinking = true;
             }
@@ -176,17 +169,16 @@
                 }
             }
 
+            // 固定されたサイズから中心位置を確定
             const centerX = canvas.width / 2;
             const centerY = canvas.height / 2;
             
-            // 画面のサイズに基づいた目の半径計算
             const eyeRadius = Math.min(canvas.width, canvas.height) * 0.20;
             const eyeSpacing = eyeRadius * 1.2; 
 
             const leftEyeCenter = { x: centerX - eyeSpacing, y: centerY };
             const rightEyeCenter = { x: centerX + eyeSpacing, y: centerY };
 
-            // 真ん丸の可愛い目の描画
             function drawAnimeEye(center) {
                 ctx.save();
                 ctx.translate(center.x, center.y);
@@ -226,7 +218,6 @@
 
                 ctx.restore();
                 
-                // まばたき時の線
                 if (blinkScale <= 0.05) {
                     ctx.save();
                     ctx.translate(center.x, center.y);
@@ -247,7 +238,7 @@
             requestAnimationFrame(drawLoop);
         }
 
-        // 描画開始
+        // 即時描画
         drawLoop();
 
         // AIモデルロード
@@ -265,11 +256,15 @@
         btn.addEventListener('click', async () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                btn.style.display = 'none';
-                statusDiv.style.display = 'none';
+                
+                // 【固定化の徹底】UIの消去方法をディスプレイ非表示（none）ではなく、
+                // 構造を壊さないまま透明にする（opacity）方法に変更し、レイアウト変化の引き金を完全に潰す
+                btn.style.opacity = '0';
+                btn.style.pointerEvents = 'none';
+                statusDiv.style.opacity = '0';
+
                 video.srcObject = stream;
 
-                // トラッキング処理
                 function detect() {
                     if (video.videoWidth > 0 && model) {
                         model.estimateFaces(video, false).then(predictions => {

@@ -3,25 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>音源方向チェッカー v2</title>
+    <title>音源チェッカー ＆ インカメ</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding-top: 30px; }
+        body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding-top: 30px; margin: 0; }
         #btn { padding: 20px 40px; font-size: 20px; cursor: pointer; background: #00ffcc; border: none; border-radius: 5px; font-weight: bold; }
         #result { font-size: 40px; font-weight: bold; margin-top: 40px; color: #00ffcc; min-height: 60px; }
-        #meters { display: flex; justify-content: center; gap: 40px; margin-top: 30px; }
-        .meter { width: 60px; background: #444; height: 250px; position: relative; display: flex; align-items: flex-end; border-radius: 5px; overflow: hidden; }
+        #display-area { display: flex; justify-content: center; align-items: flex-end; gap: 40px; margin-top: 30px; }
+        .meter-container { display: flex; flex-direction: column; align-items: center; }
+        .meter { width: 60px; background: #444; height: 250px; position: relative; display: flex; align-items: flex-end; border-radius: 5px; overflow: hidden; margin-top: 10px; }
         .fill { width: 100%; background: linear-gradient(to top, #00ffcc, #ff007f); height: 0%; transition: height 0.05s; }
+        .video-container { display: flex; flex-direction: column; align-items: center; }
+        #webcam { height: 250px; aspect-ratio: 4 / 3; object-fit: cover; background: #000; border-radius: 5px; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <h1>音源方向チェッカー v2</h1>
-    <p>スマホを【横向き】にして机に置いてください</p>
-    <button id="btn">マイクを起動</button>
+    <h1>音源チェッカー ＆ インカメ</h1>
+    <p>ボタンを押してマイクとインカメを起動してください</p>
+    <button id="btn">起動する</button>
 
-    <div id="meters">
-        <div>CH1 (左側)<div class="meter"><div id="left-fill" class="fill"></div></div></div>
-        <div>CH2 (右側)<div class="meter"><div id="right-fill" class="fill"></div></div></div>
+    <div id="display-area">
+        <div class="meter-container">
+            <div>CH1 (マイク)</div>
+            <div class="meter"><div id="left-fill" class="fill"></div></div>
+        </div>
+        
+        <div class="video-container">
+            <div>インカメ映像</div>
+            <video id="webcam" autoplay playsinline muted></video>
+        </div>
     </div>
 
     <div id="result">-- 停止中 --</div>
@@ -30,84 +40,67 @@
         const btn = document.getElementById('btn');
         const resultDiv = document.getElementById('result');
         const leftFill = document.getElementById('left-fill');
-        const rightFill = document.getElementById('right-fill');
+        const video = document.getElementById('webcam');
 
         btn.addEventListener('click', async () => {
             try {
-                // スマホに「生データ（ステレオ）をくれ」と強制する設定
+                // マイクとインカメ（フロントカメラ）を同時に要求
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
-                        channelCount: 2,
+                        channelCount: 1,
                         echoCancellation: false,
                         noiseSuppression: false,
                         autoGainControl: false
+                    },
+                    video: {
+                        // ここを "user" にしてインカメを強制
+                        facingMode: "user" 
                     }
                 });
 
                 btn.style.display = 'none';
                 
+                // カメラ映像をvideoタグにセット
+                video.srcObject = stream;
+                
+                // 音声解析の設定
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 const source = audioCtx.createMediaStreamSource(stream);
-                const splitter = audioCtx.createChannelSplitter(2);
-                source.connect(splitter);
-
                 const analyserL = audioCtx.createAnalyser();
-                const analyserR = audioCtx.createAnalyser();
                 analyserL.fftSize = 256;
-                analyserR.fftSize = 256;
-                
-                splitter.connect(analyserL, 0);
-                splitter.connect(analyserR, 1);
+                source.connect(analyserL);
 
-                // 波形データを直接取得するための配列
                 const dataL = new Uint8Array(analyserL.fftSize);
-                const dataR = new Uint8Array(analyserR.fftSize);
 
-                function checkDirection() {
+                function checkVolume() {
                     analyserL.getByteTimeDomainData(dataL);
-                    analyserR.getByteTimeDomainData(dataR);
 
-                    // 無音状態（128）からの「最大の振れ幅」を計算（これで感度が爆上がりします）
+                    // 最大振幅（感度）の計算
                     let maxL = 0;
-                    let maxR = 0;
                     for (let i = 0; i < dataL.length; i++) {
                         const absL = Math.abs(dataL[i] - 128);
-                        const absR = Math.abs(dataR[i] - 128);
                         if (absL > maxL) maxL = absL;
-                        if (absR > maxR) maxR = absR;
                     }
 
-                    // 0〜127の値を100%に変換
                     const volL = (maxL / 127) * 100;
-                    const volR = (maxR / 127) * 100;
 
                     // メーターの表示更新
                     leftFill.style.height = `${volL}%`;
-                    rightFill.style.height = `${volR}%`;
 
-                    // 判定（環境音を無視するため、5%以上の音量がある時だけ動かす）
-                    if (volL > 5 || volR > 5) {
-                        const diff = volL - volR;
-                        const threshold = 8; // 判定の厳しさはここで調整
-
-                        if (diff > threshold) {
-                            resultDiv.innerText = "⬅️ 左から検知！";
-                        } else if (diff < -threshold) {
-                            resultDiv.innerText = "右から検知！ ➡️";
-                        } else {
-                            resultDiv.innerText = "⏺ 正面付近";
-                        }
+                    // 音の検知フラグ表示
+                    if (volL > 5) {
+                        resultDiv.innerText = "🎵 音声を検知！";
                     } else {
                         resultDiv.innerText = "-- 静かです --";
                     }
 
-                    requestAnimationFrame(checkDirection);
+                    requestAnimationFrame(checkVolume);
                 }
 
-                checkDirection();
+                checkVolume();
 
             } catch (err) {
-                alert('エラーが発生しました: ' + err);
+                alert('マイクまたはカメラの起動に失敗しました: ' + err);
             }
         });
     </script>

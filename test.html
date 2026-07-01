@@ -2,35 +2,51 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>ver07-01-02</title>
+    <title>ver07-01-03</title>
     <style>
         body {
-            font-family: sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             text-align: center;
-            margin-top: 100px;
-            background-color: #f5f7fa;
+            padding-top: 100px;
+            background-color: #f0f3f6;
+            color: #333;
+        }
+        .box {
+            background: white;
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
         }
         button {
-            font-size: 20px;
-            padding: 15px 30px;
+            font-size: 18px;
+            padding: 12px 24px;
             margin: 10px;
             font-weight: bold;
+            border: none;
+            border-radius: 6px;
             cursor: pointer;
         }
+        #start-btn { background-color: #2ecc71; color: white; }
+        #stop-btn { background-color: #e74c3c; color: white; }
+        button:disabled { background-color: #ccc; color: #666; cursor: not-allowed; }
         #status {
-            font-size: 18px;
-            color: #666;
+            font-size: 16px;
             margin-top: 20px;
             font-weight: bold;
+            color: #7f8c8d;
         }
     </style>
 </head>
 <body>
 
-    <h1>ver07-01-02</h1>
+<div class="box">
+    <h1>ver07-01-03</h1>
     <button id="start-btn">録音開始</button>
     <button id="stop-btn" disabled>停止</button>
     <div id="status">「録音開始」を押してください</div>
+</div>
 
 <script>
     const startBtn = document.getElementById('start-btn');
@@ -41,42 +57,43 @@
     let recognition = null;
     let audioCtx = null;
 
-    // ★iPhoneのマイクON中でも強制的に「ピピッ！」と鳴らすための電子音関数
+    // ★キレのある電子音を「最大音量」で生成して鳴らす関数
     function playBeep() {
+        if (!audioCtx) return;
+        
         try {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
             if (audioCtx.state === 'suspended') {
                 audioCtx.resume();
             }
+            
+            const now = audioCtx.currentTime;
             
             // 1音目（ピ）
             const osc1 = audioCtx.createOscillator();
             const gain1 = audioCtx.createGain();
             osc1.type = 'sine';
-            osc1.frequency.setValueAtTime(1000, audioCtx.currentTime); // 高い音
-            gain1.gain.setValueAtTime(0.3, audioCtx.currentTime);
-            gain1.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc1.frequency.setValueAtTime(1500, now); // 聞き取りやすい高音
+            gain1.gain.setValueAtTime(1.0, now);      // 音量をMAXに設定
+            gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
             osc1.connect(gain1);
             gain1.connect(audioCtx.destination);
-            osc1.start();
-            osc1.stop(audioCtx.currentTime + 0.1);
+            osc1.start(now);
+            osc1.stop(now + 0.15);
 
             // 2音目（ピッ）
             const osc2 = audioCtx.createOscillator();
             const gain2 = audioCtx.createGain();
             osc2.type = 'sine';
-            osc2.frequency.setValueAtTime(1200, audioCtx.currentTime + 0.12); // さらに高い音
-            gain2.gain.setValueAtTime(0.3, audioCtx.currentTime + 0.12);
-            gain2.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+            osc2.frequency.setValueAtTime(1800, now + 0.1); // さらに高音
+            gain2.gain.setValueAtTime(1.0, now + 0.1);      // 音量をMAXに設定
+            gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
             osc2.connect(gain2);
             gain2.connect(audioCtx.destination);
-            osc2.start(audioCtx.currentTime + 0.12);
-            osc2.stop(audioCtx.currentTime + 0.25);
+            osc2.start(now + 0.1);
+            osc2.stop(now + 0.3);
 
         } catch (e) {
-            console.error("オーディオ再生エラー:", e);
+            console.error("再生エラー:", e);
         }
     }
 
@@ -89,10 +106,8 @@
         recognition.continuous = true;
 
         recognition.onstart = () => {
-            statusText.textContent = "認識中... 触らずに「テスト」や「ワン」と言ってね";
+            statusText.textContent = "認識中... 「テスト」や「ワン」と言ってね";
             statusText.style.color = "#2ecc71";
-            // iOSのオーディオ再生制限を解除するため、タップ時にContextを作成しておく
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         };
 
         recognition.onresult = (event) => {
@@ -100,14 +115,14 @@
             for (let i = event.resultIndex; i < event.results.length; ++i) {
                 if (event.results[i].isFinal) {
                     const text = event.results[i][0].transcript;
-                    // 反応するキーワード（シンプルに3つだけ）
+                    // キーワード判定
                     if (text.includes("テスト") || text.includes("ワン") || text.includes("犬")) {
                         trigger = true;
                     }
                 }
             }
             if (trigger) {
-                playBeep(); // 条件に合致したら音を鳴らす
+                playBeep(); // 触らずに音を鳴らす！
             }
         };
 
@@ -119,7 +134,7 @@
         };
 
         recognition.onend = () => {
-            // 停止ボタンが押されていないなら自動でマイクを再起動（無限ループ）
+            // 停止ボタンが押されていないなら、触らずに無限にマイクを自動再起動
             if (startBtn.disabled) {
                 recognition.start();
             } else {
@@ -128,10 +143,25 @@
             }
         };
 
+        // ★★★ここがiPhone攻略の最重要ポイント★★★
         startBtn.addEventListener('click', () => {
+            try {
+                // ユーザーがボタンをタップした「まさにその瞬間」にオーディオ機能を生成
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                // 空っぽの無音データを一瞬流して、iPhoneの「音出しブロック」を完全に破壊・解除する
+                const dummy = audioCtx.createBufferSource();
+                dummy.connect(audioCtx.destination);
+                dummy.start(0);
+            } catch (e) {
+                console.error("オーディオ初期化失敗:", e);
+            }
+
             startBtn.disabled = true;
             stopBtn.disabled = false;
-            recognition.start();
+            recognition.start(); // 音声認識スタート
         });
 
         stopBtn.addEventListener('click', () => {

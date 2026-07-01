@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ver07-01-05</title>
+    <title>ver07-01-06</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -43,7 +43,7 @@
 <body>
 
 <div class="box">
-    <h1>ver07-01-05</h1>
+    <h1>ver07-01-06</h1>
     <button id="start-btn">録音開始</button>
     <button id="stop-btn" disabled>停止</button>
     <div id="status">「録音開始」を押してください</div>
@@ -58,8 +58,8 @@
     let recognition = null;
     let audioCtx = null;
 
-    // 先ほど100%音が鳴った電子音の処理
-    function playBeep() {
+    // ★iPhoneでもマイクONのまま大音量で鳴る「犬の鳴き声（ワン！）」合成関数
+    function playBark() {
         if (!audioCtx) return;
         
         try {
@@ -69,29 +69,43 @@
             
             const now = audioCtx.currentTime;
             
-            // 1音目（ピ）
-            const osc1 = audioCtx.createOscillator();
-            const gain1 = audioCtx.createGain();
-            osc1.type = 'sine';
-            osc1.frequency.setValueAtTime(1200, now);
-            gain1.gain.setValueAtTime(0.8, now); // 音量をしっかり出す
-            gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-            osc1.connect(gain1);
-            gain1.connect(audioCtx.destination);
-            osc1.start(now);
-            osc1.stop(now + 0.1);
+            // 1. 犬の声の「太さ・低音」を作る波形（ワ〜ン のベース）
+            const oscBase = audioCtx.createOscillator();
+            const gainBase = audioCtx.createGain();
+            oscBase.type = 'triangle'; // 少しこもった太い音
+            
+            // 「ワ（高）」から「ン（低）」へピッチを急激に落とす
+            oscBase.frequency.setValueAtTime(450, now);
+            oscBase.frequency.exponentialRampToValueAtTime(150, now + 0.22);
+            
+            // 音量の変化（パッと出て、余韻を残して消える）
+            gainBase.gain.setValueAtTime(0.9, now);
+            gainBase.gain.linearRampToValueAtTime(0.9, now + 0.04);
+            gainBase.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+            
+            oscBase.connect(gainBase);
+            gainBase.connect(audioCtx.destination);
 
-            // 2音目（ピッ）
-            const osc2 = audioCtx.createOscillator();
-            const gain2 = audioCtx.createGain();
-            osc2.type = 'sine';
-            osc2.frequency.setValueAtTime(1500, now + 0.08);
-            gain2.gain.setValueAtTime(0.8, now + 0.08);
-            gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
-            osc2.connect(gain2);
-            gain2.connect(audioCtx.destination);
-            osc2.start(now + 0.08);
-            osc2.stop(now + 0.2);
+            // 2. 犬の声の「しゃがれ・キャン！という尖り」を作る波形
+            const oscBark = audioCtx.createOscillator();
+            const gainBark = audioCtx.createGain();
+            oscBark.type = 'sawtooth'; // ギザギザした濁った音
+            
+            oscBark.frequency.setValueAtTime(550, now);
+            oscBark.frequency.exponentialRampToValueAtTime(180, now + 0.15);
+            
+            gainBark.gain.setValueAtTime(0.3, now); // 少し混ぜる
+            gainBark.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+            
+            oscBark.connect(gainBark);
+            gainBark.connect(audioCtx.destination);
+
+            // 同時に再生スタート
+            oscBase.start(now);
+            oscBase.stop(now + 0.22);
+            
+            oscBark.start(now);
+            oscBark.stop(now + 0.22);
 
         } catch (e) {
             console.error("再生エラー:", e);
@@ -122,9 +136,9 @@
                     }
                 }
             }
-            // キーワードを検知したら、スマホを触らずにその場で即座に音を鳴らす！
+            // キーワード検知で「ワン！」と鳴かす
             if (trigger) {
-                playBeep();
+                playBark();
             }
         };
 
@@ -136,9 +150,8 @@
         };
 
         recognition.onend = () => {
-            // 停止ボタンが押されていないなら自動でマイクを再起動（無限ループ）
             if (startBtn.disabled) {
-                recognition.start();
+                recognition.start(); // 無限ループ
             } else {
                 statusText.textContent = "停止しました。";
                 statusText.style.color = "#7f8c8d";
@@ -147,12 +160,10 @@
 
         startBtn.addEventListener('click', () => {
             try {
-                // ボタンを押した「この瞬間」に音響システムを叩き起こして、音出しの全許可をもらう
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 if (audioCtx.state === 'suspended') {
                     audioCtx.resume();
                 }
-                // iPhoneのブロックをすり抜けるためのダミー音声を一瞬流す
                 const dummy = audioCtx.createBufferSource();
                 dummy.connect(audioCtx.destination);
                 dummy.start(0);
@@ -162,7 +173,7 @@
 
             startBtn.disabled = true;
             stopBtn.disabled = false;
-            recognition.start(); // 音声認識スタート
+            recognition.start();
         });
 
         stopBtn.addEventListener('click', () => {

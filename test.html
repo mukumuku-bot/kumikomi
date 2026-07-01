@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>iPhone対応！音声文字起こし & ワン！</title>
+    <title>ver07-01-01</title>
     <style>
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
@@ -71,20 +71,6 @@
             border-top: 1px solid #eee;
             padding-top: 20px;
         }
-        .settings-section h2 {
-            font-size: 18px;
-            color: #34495e;
-            margin-bottom: 15px;
-        }
-        .settings-item {
-            margin-bottom: 15px;
-        }
-        .settings-item label {
-            display: block;
-            font-weight: bold;
-            margin-bottom: 5px;
-            color: #7f8c8d;
-        }
         #keywords-input {
             width: 100%;
             padding: 10px;
@@ -93,17 +79,12 @@
             border-radius: 4px;
             box-sizing: border-box;
         }
-        .info-text {
-            font-size: 12px;
-            color: #95a5a6;
-            margin-top: 5px;
-        }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>音声文字起こしツール</h1>
+    <h1>ver07-01-01</h1>
     
     <div class="btn-group">
         <button id="start-btn">録音開始</button>
@@ -114,12 +95,8 @@
     <div id="output" placeholder="ここに文字おこしが表示されます..."></div>
 
     <div class="settings-section">
-        <h2>鳴くキーワード設定（ワン！）</h2>
-        <div class="settings-item">
-            <label for="keywords-input">キーワード（カンマ区切り）:</label>
-            <input type="text" id="keywords-input" value="ワン,わんわん,犬,テスト">
-            <p class="info-text">キーワードを検知すると、iPhoneでも音が鳴るようにマイクを一瞬制御します。</p>
-        </div>
+        <label for="keywords-input"><strong>鳴くキーワード（カンマ区切り）:</strong></label>
+        <input type="text" id="keywords-input" value="ワン,わんわん,犬,テスト">
     </div>
 </div>
 
@@ -130,8 +107,7 @@
     const outputDiv = document.getElementById('output');
     const keywordsInput = document.getElementById('keywords-input');
 
-    let isRunning = false;   // ユーザーが「録音開始」しているかどうかのフラグ
-    let isBarking = false;   // いま「ワン！」と鳴いている最中かどうかのフラグ
+    let isRunning = false;
     let finalTranscript = '';
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -145,33 +121,18 @@
         recognition.interimResults = true;
         recognition.continuous = true;
 
-        // ★鳴く処理（鳴き終わったらマイクを再開する）
-        function triggerBark() {
-            isBarking = true;
-            recognition.stop(); // 1. まずマイクを止める（iPhoneの音を出せるようにするため）
-        }
-
+        // ★マイクをONにしたまま「ワン！」と喋る関数
         function speakBark() {
-            window.speechSynthesis.cancel();
+            window.speechSynthesis.cancel(); // 前の音声をキャンセル
             const utterance = new SpeechSynthesisUtterance('ワン！');
             utterance.lang = 'ja-JP';
-            utterance.rate = 1.6;
-            utterance.pitch = 1.8;
-
-            // 鳴き終わったときの処理
-            utterance.onend = () => {
-                isBarking = false;
-                // ユーザーが停止ボタンを押していなければ、マイクを再開する
-                if (isRunning) {
-                    recognition.start();
-                }
-            };
-
+            utterance.rate = 1.6; // 犬っぽく早口
+            utterance.pitch = 1.8; // 犬っぽく高音
             window.speechSynthesis.speak(utterance);
         }
 
         recognition.onstart = () => {
-            statusText.textContent = "音声認識中... 「テスト」や「犬」と言ってみてね！";
+            statusText.textContent = "音声認識中... 触らずに「テスト」や「犬」と言ってみてね！";
             statusText.style.color = "#2ecc71";
             startBtn.disabled = true;
             stopBtn.disabled = false;
@@ -189,6 +150,7 @@
                     const transcript = event.results[i][0].transcript;
                     finalTranscript += transcript + '\n';
 
+                    // キーワードが含まれているか判定
                     barkKeywords.forEach(keyword => {
                         if (transcript.includes(keyword)) {
                             barkNeeded = true;
@@ -202,33 +164,28 @@
             outputDiv.innerHTML = finalTranscript + '<span class="interim">' + interimTranscript + '</span>';
             outputDiv.scrollTop = outputDiv.scrollHeight;
 
-            // キーワードが見つかったら、マイク停止をトリガー
-            if (barkNeeded && !isBarking) {
-                triggerBark();
+            // キーワードを検知したら、マイクを止めずにそのまま発音を命令する
+            if (barkNeeded) {
+                speakBark();
             }
         };
 
         recognition.onerror = (event) => {
-            // アイフォンで一度マイクを切るときに出るエラーなどは無視する
             if (event.error !== 'aborted') {
-                statusText.textContent = "エラーが発生しました: " + event.error;
+                statusText.textContent = "エラー: " + event.error;
                 statusText.style.color = "#e74c3c";
             }
         };
 
         recognition.onend = () => {
-            // 「ワン！」のためにマイクを止めた場合
-            if (isBarking) {
-                speakBark(); // 音声を鳴らす
-            } else if (!isRunning) {
-                // 本当に停止ボタンが押された場合
+            // ユーザーが停止を押していない限り、ブラウザが勝手に切っても無限に自動復活する
+            if (isRunning) {
+                recognition.start();
+            } else {
                 statusText.textContent = "停止しました。";
                 statusText.style.color = "#7f8c8d";
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
-            } else {
-                // ブラウザが勝手にマイクを切った場合は自動再起動
-                recognition.start();
             }
         };
 
@@ -241,7 +198,6 @@
 
         stopBtn.addEventListener('click', () => {
             isRunning = false;
-            isBarking = false;
             recognition.stop();
         });
     }

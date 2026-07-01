@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルタイム音声文字起こし</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        h1 {
+            text-align: center;
+            font-size: 24px;
+            color: #2c3e50;
+        }
+        .container {
+            background: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .btn-group {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        #start-btn { background-color: #2ecc71; color: white; }
+        #start-btn:hover { background-color: #27ae60; }
+        #start-btn:disabled { background-color: #bdc3c7; }
+        
+        #stop-btn { background-color: #e74c3c; color: white; }
+        #stop-btn:hover { background-color: #c0392b; }
+        #stop-btn:disabled { background-color: #bdc3c7; }
+
+        #status {
+            text-align: center;
+            font-weight: bold;
+            color: #7f8c8d;
+            margin-bottom: 20px;
+        }
+        #output {
+            border: 1px solid #dcdde1;
+            border-radius: 4px;
+            padding: 15px;
+            min-height: 250px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            background: #fafafa;
+            line-height: 1.6;
+        }
+        .interim { color: #95a5a6; font-style: italic; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>音声文字起こしツール</h1>
+    
+    <div class="btn-group">
+        <button id="start-btn">録音開始</button>
+        <button id="stop-btn" disabled>停止</button>
+    </div>
+    
+    <p id="status">「録音開始」を押してマイクを許可してください</p>
+    <div id="output" placeholder="ここに文字おこしが表示されます..."></div>
+</div>
+
+<script>
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const statusText = document.getElementById('status');
+    const outputDiv = document.getElementById('output');
+
+    // ブラウザの互換性チェック
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+        statusText.textContent = "お使いのブラウザは音声認識に対応していません。Google Chrome等をお使いください。";
+        startBtn.disabled = true;
+    } else {
+        const recognition = new SpeechRecognition();
+        
+        // 設定
+        recognition.lang = 'ja-JP';         // 日本語に設定
+        recognition.interimResults = true;  // 話している途中の文字もリアルタイムに表示
+        recognition.continuous = true;      // 話し終えても自動で終了せず、連続で認識
+
+        let finalTranscript = ''; // 確定したテキスト
+
+        // 音声認識が開始されたとき
+        recognition.onstart = () => {
+            statusText.textContent = "音声認識中... お話しください。";
+            statusText.style.color = "#2ecc71";
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+        };
+
+        // 音声を検知・文字おこししたとき
+        recognition.onresult = (event) => {
+            let interimTranscript = ''; // 認識途中のテキスト
+
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalTranscript += event.results[i][0].transcript + '\n';
+                } else {
+                    interimTranscript += event.results[i][0].transcript;
+                }
+            }
+
+            // 確定した文字と、現在認識中の文字（グレー表示）を組み合わせて表示
+            outputDiv.innerHTML = finalTranscript + '<span class="interim">' + interimTranscript + '</span>';
+            
+            // 常に最新のテキストが見えるように自動スクロール
+            outputDiv.scrollTop = outputDiv.scrollHeight;
+        };
+
+        // エラーが発生したとき
+        recognition.onerror = (event) => {
+            statusText.textContent = "エラーが発生しました: " + event.error;
+            statusText.style.color = "#e74c3c";
+        };
+
+        // 音声認識が終了したとき（手動停止、または無音による自動切断）
+        recognition.onend = () => {
+            statusText.textContent = "停止しました。";
+            statusText.style.color = "#7f8c8d";
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        };
+
+        // ボタンのクリックイベント
+        startBtn.addEventListener('click', () => {
+            recognition.start();
+        });
+
+        stopBtn.addEventListener('click', () => {
+            recognition.stop();
+        });
+    }
+</script>
+</body>
+</html>

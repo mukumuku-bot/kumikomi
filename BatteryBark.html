@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ver07-01-08</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            text-align: center;
+            padding-top: 100px;
+            background-color: #f0f3f6;
+            color: #333;
+        }
+        .box {
+            background: white;
+            max-width: 380px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .battery-display {
+            font-size: 64px;
+            font-weight: bold;
+            margin: 20px 0;
+            color: #2c3e50;
+        }
+        button {
+            font-size: 18px;
+            padding: 15px 30px;
+            margin: 10px;
+            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        #start-btn { background-color: #3498db; color: white; }
+        #stop-btn { background-color: #e74c3c; color: white; }
+        button:disabled { background-color: #ccc; color: #666; cursor: not-allowed; }
+        #status {
+            font-size: 16px;
+            margin-top: 25px;
+            font-weight: bold;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+
+<div class="box">
+    <h1>ver07-01-08</h1>
+    
+    <div class="battery-display" id="battery-level">-- %</div>
+    
+    <button id="start-btn">監視開始</button>
+    <button id="stop-btn" disabled>停止</button>
+    <div id="status">「監視開始」を押してください</div>
+</div>
+
+<script>
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const statusText = document.getElementById('status');
+    const batteryLevelDiv = document.getElementById('battery-level');
+
+    let audioCtx = null;
+    let batteryObject = null;
+    let lastLevel = null; // 前回のバッテリー残量を記録する変数
+
+    // 前回の「犬の鳴き声」合成関数
+    function playBark() {
+        if (!audioCtx) return;
+        try {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const now = audioCtx.currentTime;
+            
+            // 低音ベース
+            const oscBase = audioCtx.createOscillator();
+            const gainBase = audioCtx.createGain();
+            oscBase.type = 'triangle';
+            oscBase.frequency.setValueAtTime(450, now);
+            oscBase.frequency.exponentialRampToValueAtTime(150, now + 0.22);
+            gainBase.gain.setValueAtTime(0.9, now);
+            gainBase.gain.linearRampToValueAtTime(0.9, now + 0.04);
+            gainBase.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+            oscBase.connect(gainBase);
+            gainBase.connect(audioCtx.destination);
+
+            // しゃがれ感
+            const oscBark = audioCtx.createOscillator();
+            const gainBark = audioCtx.createGain();
+            oscBark.type = 'sawtooth';
+            oscBark.frequency.setValueAtTime(550, now);
+            oscBark.frequency.exponentialRampToValueAtTime(180, now + 0.15);
+            gainBark.gain.setValueAtTime(0.3, now);
+            gainBark.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+            oscBark.connect(gainBark);
+            gainBark.connect(audioCtx.destination);
+
+            oscBase.start(now);
+            oscBase.stop(now + 0.22);
+            oscBark.start(now);
+            oscBark.stop(now + 0.15);
+        } catch (e) {
+            console.error("再生エラー:", e);
+        }
+    }
+
+    // バッテリーの状態が変化したときに動く関数
+    function updateBatteryStatus(battery) {
+        // 0.0〜1.0 の値を 0〜100 に変換
+        const currentLevel = Math.round(battery.level * 100);
+        batteryLevelDiv.textContent = currentLevel + " %";
+
+        // 初回起動時ではなく、すでに記録があって、かつ1%以上減った場合
+        if (lastLevel !== null && currentLevel < lastLevel) {
+            playBark(); // 触らずに「ワン！」と鳴かす
+            statusText.textContent = `バッテリーが減りました！ (${lastLevel}% ＞ ${currentLevel}%)`;
+            statusText.style.color = "#e67e22";
+        }
+
+        // 今の数値を次の比較のために記録
+        lastLevel = currentLevel;
+    }
+
+    // 監視を開始するメイン処理
+    async function startMonitoring() {
+        // 1. iPhone等の音ブロック解除の儀式
+        try {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const dummy = audioCtx.createBufferSource();
+            dummy.connect(audioCtx.destination);
+            dummy.start(0);
+        } catch (e) { console.error(e); }
+
+        // 2. ブラウザがバッテリー機能に対応しているかチェック
+        if (!navigator.getBattery) {
+            statusText.textContent = "お使いの端末・ブラウザはバッテリー取得に非対応です。";
+            statusText.style.color = "#e74c3c";
+            return;
+        }
+
+        try {
+            // バッテリー情報を取得
+            batteryObject = await navigator.getBattery();
+            
+            // 現在の残量を画面に反映
+            updateBatteryStatus(batteryObject);
+            
+            // バッテリー残量が変化した（減った・増えた）のをリアルタイム監視するイベント
+            batteryObject.addEventListener('levelchange', () => {
+                updateBatteryStatus(batteryObject);
+            });
+
+            statusText.textContent = "バッテリー監視中... 1%減ると鳴きます";
+            statusText.style.color = "#2ecc71";
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+
+        } catch (error) {
+            statusText.textContent = "エラー: " + error.message;
+            statusText.style.color = "#e74c3c";
+        }
+    }
+
+    startBtn.addEventListener('click', startMonitoring);
+
+    stopBtn.addEventListener('click', () => {
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        statusText.textContent = "停止しました。";
+        statusText.style.color = "#7f8c8d";
+        // イベント解除
+        if (batteryObject) {
+            batteryObject.removeEventListener('levelchange', () => {});
+        }
+    });
+</script>
+</body>
+</html>

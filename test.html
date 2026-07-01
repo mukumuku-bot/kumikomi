@@ -2,171 +2,112 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ver07-01-01</title>
+    <title>ver07-01-02</title>
     <style>
         body {
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            max-width: 600px;
-            margin: 40px auto;
-            padding: 20px;
-            background-color: #f5f7fa;
-            color: #333;
-        }
-        h1 {
+            font-family: sans-serif;
             text-align: center;
-            font-size: 24px;
-            color: #2c3e50;
-        }
-        .container {
-            background: #fff;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .btn-group {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            margin-bottom: 20px;
+            margin-top: 100px;
+            background-color: #f5f7fa;
         }
         button {
-            padding: 12px 24px;
-            font-size: 16px;
+            font-size: 20px;
+            padding: 15px 30px;
+            margin: 10px;
             font-weight: bold;
-            border: none;
-            border-radius: 4px;
             cursor: pointer;
-            transition: background 0.2s;
         }
-        #start-btn { background-color: #2ecc71; color: white; }
-        #start-btn:hover { background-color: #27ae60; }
-        #start-btn:disabled { background-color: #bdc3c7; }
-        
-        #stop-btn { background-color: #e74c3c; color: white; }
-        #stop-btn:hover { background-color: #c0392b; }
-        #stop-btn:disabled { background-color: #bdc3c7; }
-
         #status {
-            text-align: center;
+            font-size: 18px;
+            color: #666;
+            margin-top: 20px;
             font-weight: bold;
-            color: #7f8c8d;
-            margin-bottom: 20px;
-        }
-        #output {
-            border: 1px solid #dcdde1;
-            border-radius: 4px;
-            padding: 15px;
-            min-height: 250px;
-            max-height: 400px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            background: #fafafa;
-            line-height: 1.6;
-        }
-        .interim { color: #95a5a6; font-style: italic; }
-
-        .settings-section {
-            margin-top: 25px;
-            border-top: 1px solid #eee;
-            padding-top: 20px;
-        }
-        #keywords-input {
-            width: 100%;
-            padding: 10px;
-            font-size: 16px;
-            border: 1px solid #dcdde1;
-            border-radius: 4px;
-            box-sizing: border-box;
         }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>ver07-01-01</h1>
-    
-    <div class="btn-group">
-        <button id="start-btn">録音開始</button>
-        <button id="stop-btn" disabled>停止</button>
-    </div>
-    
-    <p id="status">「録音開始」を押してマイクを許可してください</p>
-    <div id="output" placeholder="ここに文字おこしが表示されます..."></div>
-
-    <div class="settings-section">
-        <label for="keywords-input"><strong>鳴くキーワード（カンマ区切り）:</strong></label>
-        <input type="text" id="keywords-input" value="ワン,わんわん,犬,テスト">
-    </div>
-</div>
+    <h1>ver07-01-02</h1>
+    <button id="start-btn">録音開始</button>
+    <button id="stop-btn" disabled>停止</button>
+    <div id="status">「録音開始」を押してください</div>
 
 <script>
     const startBtn = document.getElementById('start-btn');
     const stopBtn = document.getElementById('stop-btn');
     const statusText = document.getElementById('status');
-    const outputDiv = document.getElementById('output');
-    const keywordsInput = document.getElementById('keywords-input');
-
-    let isRunning = false;
-    let finalTranscript = '';
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let audioCtx = null;
+
+    // ★iPhoneのマイクON中でも強制的に「ピピッ！」と鳴らすための電子音関数
+    function playBeep() {
+        try {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            
+            // 1音目（ピ）
+            const osc1 = audioCtx.createOscillator();
+            const gain1 = audioCtx.createGain();
+            osc1.type = 'sine';
+            osc1.frequency.setValueAtTime(1000, audioCtx.currentTime); // 高い音
+            gain1.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain1.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc1.connect(gain1);
+            gain1.connect(audioCtx.destination);
+            osc1.start();
+            osc1.stop(audioCtx.currentTime + 0.1);
+
+            // 2音目（ピッ）
+            const osc2 = audioCtx.createOscillator();
+            const gain2 = audioCtx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(1200, audioCtx.currentTime + 0.12); // さらに高い音
+            gain2.gain.setValueAtTime(0.3, audioCtx.currentTime + 0.12);
+            gain2.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+            osc2.connect(gain2);
+            gain2.connect(audioCtx.destination);
+            osc2.start(audioCtx.currentTime + 0.12);
+            osc2.stop(audioCtx.currentTime + 0.25);
+
+        } catch (e) {
+            console.error("オーディオ再生エラー:", e);
+        }
+    }
 
     if (!SpeechRecognition) {
-        statusText.textContent = "お使いのブラウザは音声認識に対応していません。";
-        startBtn.disabled = true;
+        statusText.textContent = "このブラウザは音声認識に対応していません。";
     } else {
-        const recognition = new SpeechRecognition();
+        recognition = new SpeechRecognition();
         recognition.lang = 'ja-JP';
         recognition.interimResults = true;
         recognition.continuous = true;
 
-        // ★マイクをONにしたまま「ワン！」と喋る関数
-        function speakBark() {
-            window.speechSynthesis.cancel(); // 前の音声をキャンセル
-            const utterance = new SpeechSynthesisUtterance('ワン！');
-            utterance.lang = 'ja-JP';
-            utterance.rate = 1.6; // 犬っぽく早口
-            utterance.pitch = 1.8; // 犬っぽく高音
-            window.speechSynthesis.speak(utterance);
-        }
-
         recognition.onstart = () => {
-            statusText.textContent = "音声認識中... 触らずに「テスト」や「犬」と言ってみてね！";
+            statusText.textContent = "認識中... 触らずに「テスト」や「ワン」と言ってね";
             statusText.style.color = "#2ecc71";
-            startBtn.disabled = true;
-            stopBtn.disabled = false;
+            // iOSのオーディオ再生制限を解除するため、タップ時にContextを作成しておく
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         };
 
         recognition.onresult = (event) => {
-            let interimTranscript = '';
-            let barkNeeded = false;
-
-            const keywordsText = keywordsInput.value;
-            const barkKeywords = keywordsText.split(',').map(key => key.trim()).filter(key => key !== '');
-
+            let trigger = false;
             for (let i = event.resultIndex; i < event.results.length; ++i) {
                 if (event.results[i].isFinal) {
-                    const transcript = event.results[i][0].transcript;
-                    finalTranscript += transcript + '\n';
-
-                    // キーワードが含まれているか判定
-                    barkKeywords.forEach(keyword => {
-                        if (transcript.includes(keyword)) {
-                            barkNeeded = true;
-                        }
-                    });
-                } else {
-                    interimTranscript += event.results[i][0].transcript;
+                    const text = event.results[i][0].transcript;
+                    // 反応するキーワード（シンプルに3つだけ）
+                    if (text.includes("テスト") || text.includes("ワン") || text.includes("犬")) {
+                        trigger = true;
+                    }
                 }
             }
-
-            outputDiv.innerHTML = finalTranscript + '<span class="interim">' + interimTranscript + '</span>';
-            outputDiv.scrollTop = outputDiv.scrollHeight;
-
-            // キーワードを検知したら、マイクを止めずにそのまま発音を命令する
-            if (barkNeeded) {
-                speakBark();
+            if (trigger) {
+                playBeep(); // 条件に合致したら音を鳴らす
             }
         };
 
@@ -178,26 +119,24 @@
         };
 
         recognition.onend = () => {
-            // ユーザーが停止を押していない限り、ブラウザが勝手に切っても無限に自動復活する
-            if (isRunning) {
+            // 停止ボタンが押されていないなら自動でマイクを再起動（無限ループ）
+            if (startBtn.disabled) {
                 recognition.start();
             } else {
                 statusText.textContent = "停止しました。";
                 statusText.style.color = "#7f8c8d";
-                startBtn.disabled = false;
-                stopBtn.disabled = true;
             }
         };
 
         startBtn.addEventListener('click', () => {
-            isRunning = true;
-            finalTranscript = '';
-            outputDiv.innerHTML = '';
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
             recognition.start();
         });
 
         stopBtn.addEventListener('click', () => {
-            isRunning = false;
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
             recognition.stop();
         });
     }
